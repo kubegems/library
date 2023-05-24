@@ -330,14 +330,13 @@ func buildRouteOperation(route Route, builder *openapi.Builder) *spec.Operation 
 							Description: param.Description,
 							In:          string(param.Kind),
 							Schema:      builder.Build(param.Example),
+							Required:    param.Kind == ParamKindPath || param.Kind == ParamKindBody || !param.IsOptional,
 						},
 						CommonValidations: spec.CommonValidations{
-							Enum:    param.Enum,
-							Pattern: "", // TODO: support path pattern
+							Enum: param.Enum,
 						},
 						SimpleSchema: spec.SimpleSchema{
 							Type:    param.Type,
-							Example: param.Example,
 							Default: param.Default,
 						},
 					})
