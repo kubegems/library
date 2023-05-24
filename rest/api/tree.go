@@ -267,6 +267,11 @@ func (p Param) DataType(t string) Param {
 	return p
 }
 
+func (p Param) In(t ...any) Param {
+	p.Enum = append(p.Enum, t...)
+	return p
+}
+
 func (t *Tree) AddToMux(mux *mux.MethodServeMux) {
 	for path, methods := range t.Build() {
 		for method, route := range methods {

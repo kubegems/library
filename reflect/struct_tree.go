@@ -7,16 +7,15 @@ import (
 )
 
 type Node struct {
-	Name     string
-	Kind     reflect.Kind
-	Tag      reflect.StructTag
-	Value    reflect.Value
-	Children []Node
+	Name   string
+	Kind   reflect.Kind
+	Tag    reflect.StructTag
+	Value  reflect.Value
+	Fields []Node
 }
 
 func ParseStruct(data interface{}) Node {
-	v := reflect.Indirect(reflect.ValueOf(data))
-	return decode(Node{}, v)
+	return decode("", "", reflect.ValueOf(data))
 }
 
 func ToJsonPathes(prefix string, nodes []Node) []KV {
@@ -44,7 +43,7 @@ func toJsonPathes(prefix string, nodes []Node, kvs []KV) []KV {
 	for _, node := range nodes {
 		switch node.Kind {
 		case reflect.Struct, reflect.Map:
-			kvs = toJsonPathes(prefixedKey(prefix, node.Name, "."), node.Children, kvs)
+			kvs = toJsonPathes(prefixedKey(prefix, node.Name, "."), node.Fields, kvs)
 		default:
 			kvs = append(kvs, KV{
 				Key:   prefixedKey(prefix, node.Name, "."),
@@ -55,61 +54,44 @@ func toJsonPathes(prefix string, nodes []Node, kvs []KV) []KV {
 	return kvs
 }
 
-func decode(node Node, v reflect.Value) Node {
-	v = reflect.Indirect(v)
-
-	node.Kind = v.Kind()
-	node.Value = v
-
-	var children []Node
+func decode(name string, tag reflect.StructTag, v reflect.Value) Node {
+	var fields []Node
 	switch v.Kind() {
 	case reflect.Struct:
+		if name == "" {
+			name = v.Type().Name()
+		}
 		for i := 0; i < v.NumField(); i++ {
-			fi := v.Type().Field(i)
-
-			// unexported
-			if fi.PkgPath != "" {
+			fi, fv := v.Type().Field(i), v.Field(i)
+			isEmbedded, isIgnored, fieldName := StructFieldInfo(fi)
+			if isIgnored {
 				continue
 			}
-
-			opts := fi.Tag.Get("json")
-			if opts == "" {
-				opts = fi.Tag.Get("yaml")
+			fieldNode := decode(fieldName, fi.Tag, fv)
+			if isEmbedded {
+				fields = append(fields, fieldNode.Fields...)
+			} else {
+				fields = append(fields, fieldNode)
 			}
-
-			jsonopts := strings.Split(opts, ",")
-
-			if fi.Anonymous || (len(jsonopts) > 1 && jsonopts[1] == "inline") {
-				children = append(children, decode(Node{}, v.Field(i)).Children...)
-				continue
-			}
-
-			name := jsonopts[0]
-			if name == "" {
-				name = fi.Name
-			}
-			in := Node{
-				Name: name,
-				Tag:  fi.Tag,
-			}
-			children = append(children, decode(in, v.Field(i)))
 		}
 	case reflect.Map:
 		for _, k := range v.MapKeys() {
-			in := Node{
-				Name: k.String(),
-			}
-			children = append(children, decode(in, v.MapIndex(k)))
+			fields = append(fields, decode(k.String(), "", v.MapIndex(k)))
 		}
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
-			in := Node{
-				Name: strconv.Itoa(i),
-			}
-			children = append(children, decode(in, v.Index(i)))
+			fields = append(fields, decode(strconv.Itoa(i), "", v.Index(i)))
+		}
+	case reflect.Pointer:
+		if !v.IsNil() {
+			return decode(name, tag, v.Elem())
 		}
 	}
-
-	node.Children = children
-	return node
+	return Node{
+		Name:   name,
+		Kind:   v.Kind(),
+		Tag:    tag,
+		Value:  v,
+		Fields: fields,
+	}
 }

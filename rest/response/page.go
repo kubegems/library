@@ -33,50 +33,37 @@ type Page[T any] struct {
 	Size  int64 `json:"size"`
 }
 
-type Timed interface {
-	GetCreationTimestamp() metav1.Time
-}
-type Named interface {
-	GetName() string
-}
-type NameTimed interface {
-	Timed
-	Named
-}
-
-// PageObjectFromRequest used for client.Object pagination T in list
+// PageObjectFromListOptions used for client.Object pagination T in list
 // use any of T to suit for both eg. Pod(not implement metav1.Object) and *Pod(metav1.Object)
-func PageObjectFromRequest[T any](req *http.Request, list []T) Page[T] {
+func PageObjectFromListOptions[T any](list []T, opts request.ListOptions) Page[T] {
 	getname := func(t T) string {
-		if item, ok := any(t).(Named); ok {
+		if item, ok := any(t).(interface{ GetName() string }); ok {
 			return item.GetName()
 		}
-		if item, ok := any(&t).(Named); ok {
+		if item, ok := any(&t).(interface{ GetName() string }); ok {
 			return item.GetName()
 		}
 		return ""
 	}
 	gettime := func(t T) time.Time {
-		if item, ok := any(t).(Timed); ok {
+		if item, ok := any(t).(interface{ GetCreationTimestamp() metav1.Time }); ok {
 			return item.GetCreationTimestamp().Time
 		}
-		if item, ok := any(&t).(Timed); ok {
+		if item, ok := any(&t).(interface{ GetCreationTimestamp() metav1.Time }); ok {
 			return item.GetCreationTimestamp().Time
 		}
 		return time.Time{}
 	}
-	return PageFromRequest(req, list, getname, gettime)
+	return PageFromListOptions(list, opts, getname, gettime)
 }
 
 // PageFromRequest auto pagination from user request on item name or time in list
 func PageFromRequest[T any](req *http.Request, list []T, namefunc func(item T) string, timefunc func(item T) time.Time) Page[T] {
-	page, size := request.Query(req, "page", 1), request.Query(req, "size", DefaultPageSize)
-	sort, search := request.Query(req, "sort", ""), request.Query(req, "search", "")
-	return PageFrom(list, page, size, searchNameFunc(search, namefunc), sortFuncBy(sort, namefunc, timefunc))
+	return PageFromListOptions(list, request.GetListOptions(req), namefunc, timefunc)
 }
 
-func PageOnly[T any](list []T, page, size int) Page[T] {
-	return PageFrom(list, page, size, nil, nil)
+func PageFromListOptions[T any](list []T, opts request.ListOptions, namefunc func(item T) string, timefunc func(item T) time.Time) Page[T] {
+	return PageFrom(list, opts.Page, opts.Size, searchNameFunc(opts.Search, namefunc), sortFuncBy(opts.Sort, namefunc, timefunc))
 }
 
 func PageFrom[T any](list []T, page, size int, pickfun func(item T) bool, sortfun func(a, b T) bool) Page[T] {

@@ -55,7 +55,7 @@ func (m *API) RegisterController(parents []string, controller any) error {
 	return libreflector.Register(m.mactcher, m.swagger, m.options.Prefix, parents, controller)
 }
 
-func (m *API) RegisterModules(modules ...RestModule) error {
+func (m *API) RegisterModules(modules ...RestModule) *API {
 	rg := NewGroup(m.options.Prefix)
 	for _, module := range modules {
 		module.RegisterRoute(rg)
@@ -66,14 +66,14 @@ func (m *API) RegisterModules(modules ...RestModule) error {
 	}
 	tree.AddToMux(m.mactcher)
 	tree.AddToSwagger(m.swagger, openapi.NewBuilder(openapi.InterfaceBuildOptionDefault))
-	return nil
+	return m
 }
 
 func (m *API) Handle(method string, pattern string, handler http.Handler) {
 	m.mactcher.Handle(method, pattern, handler)
 }
 
-func (m *API) Handler() http.Handler {
+func (m *API) BuildHandler() http.Handler {
 	handler := http.Handler(m.mactcher)
 	return handler
 }

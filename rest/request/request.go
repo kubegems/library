@@ -33,7 +33,6 @@ type ListOptions struct {
 	Size   int    `json:"size,omitempty"`
 	Search string `json:"search,omitempty"`
 	Sort   string `json:"sort,omitempty"`
-	Filter string `json:"filter,omitempty"`
 }
 
 // nolint: gomnd

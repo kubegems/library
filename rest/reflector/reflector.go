@@ -16,7 +16,6 @@ package reflector
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +28,7 @@ import (
 	libreflect "kubegems.io/library/reflect"
 	"kubegems.io/library/rest/mux"
 	"kubegems.io/library/rest/openapi"
+	"kubegems.io/library/rest/request"
 	"kubegems.io/library/rest/response"
 	libstrings "kubegems.io/library/strings"
 )
@@ -179,9 +179,6 @@ func applyMethodPath(prefix string, pathvarnames []string, methodName string, ch
 	if isPlural {
 		// remove last path var
 		path = path[:strings.LastIndex(path, "/")]
-		if len(pathvarnames) > 0 {
-			pathvarnames = pathvarnames[:len(pathvarnames)-1]
-		}
 	}
 	if customAction != "" {
 		path += ":" + customAction
@@ -286,7 +283,7 @@ func prepareCallArgs(r *http.Request, arg0 reflect.Value, args []Argv) ([]reflec
 		case arglocQuery:
 			query := reflect.New(arg.Typ)
 			for k := range queries {
-				_ = libreflect.SetFiledValue(query, k, queries.Get(k))
+				_ = libreflect.SetFiledValue(query.Interface(), k, queries.Get(k))
 			}
 			callargs = append(callargs, query.Elem())
 		}
@@ -310,6 +307,6 @@ func decodeBody(r *http.Request, v reflect.Value) error {
 		v.SetBytes(b)
 		return nil
 	default:
-		return json.NewDecoder(r.Body).Decode(v.Addr().Interface())
+		return request.Body(r, v.Addr().Interface())
 	}
 }

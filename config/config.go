@@ -75,7 +75,7 @@ func Print(fs *pflag.FlagSet) {
 
 func AutoRegisterFlags(fs *pflag.FlagSet, prefix string, data interface{}) {
 	node := libreflect.ParseStruct(data)
-	registerFlagSet(fs, prefix, node.Children)
+	registerFlagSet(fs, prefix, node.Fields)
 }
 
 func LoadEnv(fs *pflag.FlagSet) {
@@ -132,7 +132,7 @@ func registerFlagSet(fs *pflag.FlagSet, prefix string, nodes []libreflect.Node) 
 		key := prefixedKey(prefix, node.Name)
 		switch node.Kind {
 		case reflect.Struct, reflect.Map:
-			registerFlagSet(fs, key, node.Children)
+			registerFlagSet(fs, key, node.Fields)
 		default:
 			short := node.Tag.Get("short")
 			description := node.Tag.Get("description")

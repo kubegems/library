@@ -52,7 +52,7 @@ func BuildOpenAPIRoute(list []ConvertedHandler) map[string]spec.PathItem {
 func buildRouteOperation(handler ConvertedHandler) *spec.Operation {
 	return &spec.Operation{
 		OperationProps: spec.OperationProps{
-			Summary:     handler.Resource,
+			Summary:     handler.Desc,
 			Description: handler.Desc,
 			Tags:        []string{handler.Resource},
 			Parameters: func() []spec.Parameter {
@@ -137,18 +137,31 @@ func buildQueryParams(arg Argv) []spec.Parameter {
 	params := []spec.Parameter{}
 	switch arg.Typ.Kind() {
 	case reflect.Struct:
-		newv := reflect.New(arg.Typ).Interface()
-		libreflect.EachFiledValue(newv, func(pathes []string, val reflect.Value) error {
-			if len(pathes) == 1 {
-				params = append(params, spec.Parameter{
-					ParamProps:   spec.ParamProps{Name: pathes[0], In: "query"},
-					SimpleSchema: spec.SimpleSchema{Type: "string"},
-				})
-			}
-			return nil
-		})
+		node := libreflect.ParseStruct(reflect.New(arg.Typ).Interface())
+		for _, field := range node.Fields {
+			params = append(params, spec.Parameter{
+				ParamProps:   spec.ParamProps{Name: field.Name, In: "query"},
+				SimpleSchema: spec.SimpleSchema{Type: simpleTypeOfKind(field.Kind)},
+			})
+		}
 	}
 	return params
+}
+
+func simpleTypeOfKind(t reflect.Kind) string {
+	switch t {
+	case reflect.Bool:
+		return "boolean"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "integer"
+	case reflect.Float32, reflect.Float64:
+		return "number"
+	case reflect.String:
+		return "string"
+	default:
+		return "string"
+	}
 }
 
 func bodySchema(args []Argv) *spec.Schema {

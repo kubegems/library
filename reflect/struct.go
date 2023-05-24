@@ -26,61 +26,6 @@ func SetFiledValue(dest any, jsonpath string, value any) error {
 	return setFieldValue(reflect.ValueOf(dest), value, parseJsonPath(jsonpath)...)
 }
 
-func EachFiledValue(dest any, fn func(pathes []string, val reflect.Value) error) error {
-	return traverseFiledValue(reflect.ValueOf(dest), fn)
-}
-
-func traverseFiledValue(v reflect.Value, fn func(pathes []string, val reflect.Value) error, pathes ...string) error {
-	if len(pathes) == 0 {
-		return fn(pathes, v)
-	}
-	switch t := v.Type(); t.Kind() {
-	case reflect.Ptr:
-		if v.IsNil() {
-			return nil
-		}
-		return traverseFiledValue(v.Elem(), fn, pathes...)
-	case reflect.Slice:
-		for i := 0; i < v.Len(); i++ {
-			if err := traverseFiledValue(v.Index(i), fn, append(pathes, strconv.Itoa(i))...); err != nil {
-				return err
-			}
-		}
-		return nil
-	case reflect.Map:
-		if v.IsNil() {
-			return fmt.Errorf("nil map")
-		}
-		iter := v.MapRange()
-		for iter.Next() {
-			key, val := iter.Key(), iter.Value()
-			if err := traverseFiledValue(val, fn, append(pathes, key.String())...); err != nil {
-				return err
-			}
-		}
-		return nil
-	case reflect.Struct:
-		for i := 0; i < t.NumField(); i++ {
-			isIgnore, isEmbeded, fieldName := StructFieldInfo(t.Field(i))
-			if isIgnore {
-				continue
-			}
-			if isEmbeded {
-				if err := traverseFiledValue(v.Field(i), fn, pathes...); err != nil {
-					return err
-				}
-				continue
-			}
-			if err := traverseFiledValue(v.Field(i), fn, append(pathes, fieldName)...); err != nil {
-				return err
-			}
-		}
-		return nil
-	default:
-		return fmt.Errorf("unsupported type %s", t.Kind())
-	}
-}
-
 func parseJsonPath(jsonpath string) []string {
 	pathes := []string{}
 	for _, elem := range strings.Split(jsonpath, ".") {
@@ -242,8 +187,12 @@ func setFieldValue(v reflect.Value, value any, path ...string) error {
 func StructFieldInfo(structField reflect.StructField) (bool, bool, string) {
 	isEmbedded, isIgnored, fieldName := structField.Anonymous, false, structField.Name
 	// json
-	if jsonTag := structField.Tag.Get("json"); jsonTag != "" {
-		opts := strings.Split(jsonTag, ",")
+	fieldTag := structField.Tag.Get("json")
+	if fieldTag == "" {
+		fieldTag = structField.Tag.Get("yaml")
+	}
+	if fieldTag != "" {
+		opts := strings.Split(fieldTag, ",")
 		switch val := opts[0]; val {
 		case "-":
 			isIgnored = true
@@ -303,6 +252,15 @@ func SetStringAutoConvert(v reflect.Value, str string) error {
 			return err
 		}
 		v.SetFloat(n)
+	case reflect.Slice:
+		stringSlice := strings.Split(str, ",")
+		slice := reflect.MakeSlice(v.Type(), len(stringSlice), len(stringSlice))
+		for i, s := range stringSlice {
+			if err := SetStringAutoConvert(slice.Index(i), s); err != nil {
+				return err
+			}
+		}
+		v.Set(slice)
 	default:
 		return fmt.Errorf("can not set string to %v", v.Type())
 	}
