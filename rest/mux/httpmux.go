@@ -84,9 +84,16 @@ func (m MethodHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if h, ok := m[r.Method]; ok {
 		h.ServeHTTP(w, r)
-	} else {
-		http.NotFound(w, r)
+		return
 	}
+	if r.Method == http.MethodOptions {
+		for k := range m {
+			w.Header().Add("Allow", k)
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.NotFound(w, r)
 }
 
 type MethodServeMux struct {

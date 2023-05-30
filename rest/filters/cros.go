@@ -24,8 +24,8 @@ func NewCORSFilter(next http.Handler) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Access-Control-Allow-Origin", orgin)
-		next.ServeHTTP(w, r)
 		w.Header().Set("Access-Control-Allow-Methods", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "*")
+		next.ServeHTTP(w, r)
 	}
 }
