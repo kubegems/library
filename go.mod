@@ -10,6 +10,7 @@ require (
 	github.com/go-logr/zapr v1.2.4
 	github.com/go-openapi/spec v0.20.9
 	github.com/jinzhu/inflection v1.0.0
+	github.com/opencontainers/distribution-spec/specs-go v0.0.0-20230525175157-58a1fe939258
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.15.0
 	go.uber.org/zap v1.24.0
