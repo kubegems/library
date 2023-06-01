@@ -121,7 +121,7 @@ func SearchNameFunc[T any](search string, getname func(T) string) func(T) bool {
 
 func SortByFunc[T any](by string, getname func(T) string, gettime func(T) time.Time) func(a, b T) bool {
 	switch by {
-	case "createTime", "time":
+	case "createTime", "createTimeAsc", "time":
 		if gettime == nil {
 			return nil
 		}
