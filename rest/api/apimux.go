@@ -19,6 +19,7 @@ import (
 	"path"
 
 	"github.com/go-openapi/spec"
+	"kubegems.io/library/log"
 	"kubegems.io/library/rest/filters"
 	"kubegems.io/library/rest/mux"
 	"kubegems.io/library/rest/openapi"
@@ -75,6 +76,7 @@ func (m *API) Handle(method string, pattern string, handler http.Handler) {
 
 func (m *API) BuildHandler() http.Handler {
 	handler := http.Handler(m.mactcher)
+	handler = LogFilter(log.Logger, handler) // log
 	return handler
 }
 
