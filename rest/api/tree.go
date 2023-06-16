@@ -319,8 +319,14 @@ func (tree Tree) AddToSwagger(swagger *spec.Swagger, builder *openapi.Builder) {
 func buildRouteOperation(route Route, builder *openapi.Builder) *spec.Operation {
 	return &spec.Operation{
 		OperationProps: spec.OperationProps{
-			ID:          "",
-			Tags:        route.Tags,
+			ID: "",
+			Tags: func() []string {
+				if len(route.Tags) > 0 {
+					// only use the last tag
+					return route.Tags[len(route.Tags)-1:]
+				}
+				return route.Tags
+			}(),
 			Summary:     route.Summary,
 			Description: route.Summary,
 			Consumes:    route.Consumes,
