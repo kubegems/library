@@ -33,7 +33,7 @@ func NewMatcher[T any]() *Node[T] {
 }
 
 type Node[T any] struct {
-	key      []element
+	key      Section
 	val      *matchitem[T]
 	children []*Node[T]
 }
@@ -65,18 +65,16 @@ func (n *Node[T]) Register(pattern string, val T) ([]string, error) {
 		}
 		cur = child
 	}
-	return sections.variables(), nil
+	return variables(sections), nil
 }
 
 func (n *Node[T]) Match(path string) (bool, T, map[string]string) {
-	pathtokens := parsePathTokens(path)
-
 	vars := map[string]string{}
-	match := matchchildren(n, pathtokens, vars)
-	if match == nil {
+	if match := matchchildren(n, parsePathTokens(path), vars); match == nil {
 		return false, *new(T), vars
+	} else {
+		return true, match.val, vars
 	}
-	return true, match.val, vars
 }
 
 func (n *Node[T]) indexChild(s *Node[T]) int {
@@ -88,19 +86,17 @@ func (n *Node[T]) indexChild(s *Node[T]) int {
 	return -1
 }
 
-func isSamePattern(a, b []element) bool {
-	tostr := func(elems []element) string {
+func isSamePattern(a, b []Element) bool {
+	tostr := func(elems []Element) string {
 		str := ""
 		for _, e := range elems {
-			switch e.kind {
-			case elementKindConst:
-				str += e.param
-			case elementKindVariable:
+			switch e.Kind {
+			case ElementKindConst:
+				str += e.Param
+			case ElementKindVariable:
 				str += "{}"
-			case elementKindStar:
+			case ElementKindStar:
 				str += "*"
-			case elementKindSplit:
-				str += "/"
 			}
 		}
 		return str
@@ -111,26 +107,26 @@ func isSamePattern(a, b []element) bool {
 func sortSectionMatches[T any](sections []*Node[T]) {
 	sort.Slice(sections, func(i, j int) bool {
 		secsi, secsj := sections[i].key, sections[j].key
-		switch lasti, lastj := (secsi)[len(secsi)-1].kind, (secsj)[len(secsj)-1].kind; {
-		case lasti == elementKindStar && lastj != elementKindStar:
+		switch lasti, lastj := (secsi)[len(secsi)-1].Kind, (secsj)[len(secsj)-1].Kind; {
+		case lasti == ElementKindStar && lastj != ElementKindStar:
 			return false
-		case lasti != elementKindStar && lastj == elementKindStar:
+		case lasti != ElementKindStar && lastj == ElementKindStar:
 			return true
 		}
 		cnti, cntj := 0, 0
 		for _, v := range secsi {
-			switch v.kind {
-			case elementKindConst:
+			switch v.Kind {
+			case ElementKindConst:
 				cnti += 99
-			case elementKindVariable:
+			case ElementKindVariable:
 				cnti -= 1
 			}
 		}
 		for _, v := range secsj {
-			switch v.kind {
-			case elementKindConst:
+			switch v.Kind {
+			case ElementKindConst:
 				cntj += 99
-			case elementKindVariable:
+			case ElementKindVariable:
 				cntj -= 1
 			}
 		}
@@ -148,13 +144,12 @@ func matchchildren[T any](cur *Node[T], tokens []string, vars map[string]string)
 		return nil
 	}
 	for _, child := range cur.children {
-		if matched, matchlefttokens, secvars := matchSection(child.key, tokens); matched {
+		if matched, matchlefttokens, secvars := child.key.Match(tokens); matched {
 			if child.val != nil && len(tokens) == 1 || matchlefttokens {
 				mergeMap(secvars, vars)
 				return child.val
 			}
-			result := matchchildren(child, tokens[1:], secvars)
-			if result != nil {
+			if result := matchchildren(child, tokens[1:], secvars); result != nil {
 				mergeMap(secvars, vars)
 				return result
 			}
@@ -188,29 +183,27 @@ func parsePathTokens(path string) []string {
 	return tokens
 }
 
-type patterns [][]element
-
-func (p patterns) variables() []string {
+func variables(sections []Section) []string {
 	vars := []string{}
-	for _, pattern := range p {
+	for _, pattern := range sections {
 		for _, elem := range pattern {
-			if elem.kind == elementKindVariable {
-				vars = append(vars, elem.param)
+			if elem.Kind == ElementKindVariable {
+				vars = append(vars, elem.Param)
 			}
 		}
 	}
 	return vars
 }
 
-func compilePathPattern(pattern string) (patterns, error) {
-	sections := patterns{}
+func compilePathPattern(pattern string) ([]Section, error) {
+	sections := []Section{}
 	pathtokens := parsePathTokens(pattern)
 	for _, token := range pathtokens {
 		if token == "/" {
-			sections = append(sections, []element{{kind: elementKindSplit}})
+			sections = append(sections, []Element{{Kind: ElementKindConst, Param: "/"}})
 			continue
 		}
-		compiled, err := compileSection(token)
+		compiled, err := CompileSection(token)
 		if err != nil {
 			return nil, err
 		}

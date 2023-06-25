@@ -164,6 +164,19 @@ func Test_matcher_Match(t *testing.T) {
 			matched: true,
 			vars:    map[string]string{},
 		},
+		{
+			registered: []string{
+				"/api/{name}/{path}*:action",
+				"/api/{name}/{path}*",
+			},
+			req:       "/api/dog/wang/1:action",
+			matched:   true,
+			wantMatch: "/api/{name}/{path}*:action",
+			vars: map[string]string{
+				"name": "dog",
+				"path": "wang/1",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.req, func(t *testing.T) {
@@ -173,7 +186,6 @@ func Test_matcher_Match(t *testing.T) {
 					t.Error(err)
 				}
 			}
-
 			matched, val, vars := m.Match(tt.req)
 			if matched != tt.matched {
 				t.Errorf("matcher.Match() matched = %v, want %v", matched, tt.matched)
@@ -199,47 +211,47 @@ func Test_sortSectionMatches(t *testing.T) {
 		{
 			name: "",
 			sections: []*Node[string]{
-				{key: mustCompileSection("{var}")},
-				{key: mustCompileSection("abc")},
+				{key: MustCompileSection("{var}")},
+				{key: MustCompileSection("abc")},
 			},
 			want: []*Node[string]{
-				{key: mustCompileSection("abc")},
-				{key: mustCompileSection("{var}")},
+				{key: MustCompileSection("abc")},
+				{key: MustCompileSection("{var}")},
 			},
 		},
 		{
 			name: "",
 			sections: []*Node[string]{
-				{key: mustCompileSection("abc*")},
-				{key: mustCompileSection("abc")},
+				{key: MustCompileSection("abc*")},
+				{key: MustCompileSection("abc")},
 			},
 			want: []*Node[string]{
-				{key: mustCompileSection("abc")},
-				{key: mustCompileSection("abc*")},
+				{key: MustCompileSection("abc")},
+				{key: MustCompileSection("abc*")},
 			},
 		},
 		{
 			name: "",
 			sections: []*Node[string]{
-				{key: mustCompileSection("{var}")},
-				{key: mustCompileSection("abc*")},
+				{key: MustCompileSection("{var}")},
+				{key: MustCompileSection("abc*")},
 			},
 			want: []*Node[string]{
-				{key: mustCompileSection("{var}")},
-				{key: mustCompileSection("abc*")},
+				{key: MustCompileSection("{var}")},
+				{key: MustCompileSection("abc*")},
 			},
 		},
 		{
 			name: "",
 			sections: []*Node[string]{
-				{key: mustCompileSection("{var}")},
-				{key: mustCompileSection("abc{var}")},
-				{key: mustCompileSection("abc")},
+				{key: MustCompileSection("{var}")},
+				{key: MustCompileSection("abc{var}")},
+				{key: MustCompileSection("abc")},
 			},
 			want: []*Node[string]{
-				{key: mustCompileSection("abc")},
-				{key: mustCompileSection("abc{var}")},
-				{key: mustCompileSection("{var}")},
+				{key: MustCompileSection("abc")},
+				{key: MustCompileSection("abc{var}")},
+				{key: MustCompileSection("{var}")},
 			},
 		},
 		// {
@@ -308,29 +320,29 @@ func TestParsePathTokens(t *testing.T) {
 func TestCompilePathPattern(t *testing.T) {
 	tests := []struct {
 		pattern string
-		want    [][]element
+		want    []Section
 		wantErr bool
 	}{
 		{
 			pattern: "/api/v{version}/name*",
-			want: [][]element{
-				{{kind: elementKindSplit}},
-				{{kind: elementKindConst, param: "api"}},
-				{{kind: elementKindSplit}},
-				{{kind: elementKindConst, param: "v"}, {kind: elementKindVariable, param: "version"}},
-				{{kind: elementKindSplit}},
-				{{kind: elementKindConst, param: "name"}, {kind: elementKindStar}},
+			want: []Section{
+				{{Kind: ElementKindConst, Param: "/"}},
+				{{Kind: ElementKindConst, Param: "api"}},
+				{{Kind: ElementKindConst, Param: "/"}},
+				{{Kind: ElementKindConst, Param: "v"}, {Kind: ElementKindVariable, Param: "version"}},
+				{{Kind: ElementKindConst, Param: "/"}},
+				{{Kind: ElementKindConst, Param: "name"}, {Kind: ElementKindStar}},
 			},
 		},
 		{
 			pattern: "/api/v{version}/{name}*",
-			want: [][]element{
-				{{kind: elementKindSplit}},
-				{{kind: elementKindConst, param: "api"}},
-				{{kind: elementKindSplit}},
-				{{kind: elementKindConst, param: "v"}, {kind: elementKindVariable, param: "version"}},
-				{{kind: elementKindSplit}},
-				{{kind: elementKindVariable, param: "name"}, {kind: elementKindStar}},
+			want: []Section{
+				{{Kind: ElementKindConst, Param: "/"}},
+				{{Kind: ElementKindConst, Param: "api"}},
+				{{Kind: ElementKindConst, Param: "/"}},
+				{{Kind: ElementKindConst, Param: "v"}, {Kind: ElementKindVariable, Param: "version"}},
+				{{Kind: ElementKindConst, Param: "/"}},
+				{{Kind: ElementKindVariable, Param: "name"}, {Kind: ElementKindStar}},
 			},
 		},
 	}

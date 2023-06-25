@@ -19,19 +19,18 @@ import (
 	"strings"
 )
 
-type elementKind string
+type ElementKind string
 
 const (
-	elementKindNone     elementKind = ""
-	elementKindConst    elementKind = "const"
-	elementKindVariable elementKind = "{}"
-	elementKindStar     elementKind = "*"
-	elementKindSplit    elementKind = "/"
+	ElementKindNone     ElementKind = ""
+	ElementKindConst    ElementKind = "const"
+	ElementKindVariable ElementKind = "{}"
+	ElementKindStar     ElementKind = "*"
 )
 
-type element struct {
-	kind  elementKind
-	param string
+type Element struct {
+	Kind  ElementKind
+	Param string
 }
 
 type CompileError struct {
@@ -45,129 +44,123 @@ func (e CompileError) Error() string {
 	return fmt.Sprintf("invalid char [%c] in [%s] at position %d: %s", e.Rune, e.Pattern, e.Position, e.Message)
 }
 
-func mustCompileSection(pattern string) []element {
-	ret, err := compileSection(pattern)
+func MustCompileSection(pattern string) Section {
+	ret, err := CompileSection(pattern)
 	if err != nil {
 		panic(err)
 	}
 	return ret
 }
 
-func compileSection(pattern string) ([]element, error) {
-	elems := []element{}
+type Section []Element
 
-	patternlen := len(pattern)
-	hasStarSuffix := false
-	if pattern[patternlen-1] == '*' {
-		pattern = pattern[:patternlen-1]
-		hasStarSuffix = true
-	}
-
+func CompileSection(pattern string) (Section, error) {
+	elems := []Element{}
 	pos := 0
-	currentKind := elementKindNone
+	currentKind := ElementKindNone
 	for i, rune := range pattern {
 		switch {
-		case rune == '{' && currentKind != elementKindVariable:
+		case rune == '{' && currentKind != ElementKindVariable:
 			// end a const definition
-			if currentKind == elementKindConst {
-				elems = append(elems, element{kind: elementKindConst, param: pattern[pos:i]})
+			if currentKind == ElementKindConst {
+				elems = append(elems, Element{Kind: ElementKindConst, Param: pattern[pos:i]})
 			}
 			// start a variable defination
-			currentKind = elementKindVariable
+			currentKind = ElementKindVariable
 			pos = i + 1
 
-		case rune == '}' && currentKind == elementKindVariable:
+		case rune == '}' && currentKind == ElementKindVariable:
 			// end a variable defination
-			elems = append(elems, element{kind: elementKindVariable, param: pattern[pos:i]})
-			currentKind = elementKindNone
+			elems = append(elems, Element{Kind: ElementKindVariable, Param: pattern[pos:i]})
+			currentKind = ElementKindNone
+			pos = i + 1
+		case rune == '*':
+			switch currentKind {
+			case ElementKindVariable:
+				continue
+			case ElementKindConst:
+				elems = append(elems, Element{Kind: ElementKindConst, Param: pattern[pos:i]})
+				currentKind = ElementKindNone
+			}
+			// if previous is a star, ignore this star
+			if len(elems) > 0 && elems[len(elems)-1].Kind != ElementKindStar {
+				elems = append(elems, Element{Kind: ElementKindStar})
+			}
 			pos = i + 1
 		default:
 			// if in a variable difinarion or a const define
-			if currentKind == elementKindVariable || currentKind == elementKindConst {
+			if currentKind == ElementKindVariable || currentKind == ElementKindConst {
 				continue
 			}
 			// start a const defination if not
-			if currentKind != elementKindConst {
-				currentKind = elementKindConst
+			if currentKind != ElementKindConst {
+				currentKind = ElementKindConst
 				pos = i
 			}
 		}
 	}
-	// last
 	switch currentKind {
-	case elementKindConst:
+	case ElementKindConst:
 		// end a const definition
-		elems = append(elems, element{kind: elementKindConst, param: pattern[pos:]})
-	case elementKindVariable:
+		params := pattern[pos:]
+		if len(params) != 0 {
+			elems = append(elems, Element{Kind: ElementKindConst, Param: pattern[pos:]})
+		}
+	case ElementKindVariable:
 		return nil, CompileError{Position: len(pattern), Pattern: pattern, Rune: rune(pattern[len(pattern)-1]), Message: "variable defination not closed"}
-	}
-
-	if hasStarSuffix {
-		elems = append(elems, element{kind: elementKindStar})
 	}
 	return elems, nil
 }
 
-func matchSection(compiled []element, sections []string) (bool, bool, map[string]string) {
+func (s Section) Match(tokens []string) (bool, bool, map[string]string) {
 	vars := map[string]string{}
-	if len(sections) == 0 {
+	if len(tokens) == 0 {
 		return false, false, nil
 	}
-
-	section := sections[0]
-
-	pos := 0
-	for i, elem := range compiled {
-		switch elem.kind {
-		case elementKindConst:
-			conslen := len(elem.param)
-			if len(section) < pos+conslen {
+	matchedAll := false
+	token := tokens[0]
+	proc := Element{Kind: ElementKindNone}
+	for _, elem := range s {
+		switch elem.Kind {
+		case ElementKindConst:
+			// lastIndex or Index?
+			index := strings.Index(token, elem.Param)
+			if index == -1 {
 				return false, false, nil
 			}
-			str := section[pos : pos+conslen]
-			if str != elem.param {
-				return false, false, nil
-			}
-			// next section mactch
-			pos += conslen
-		case elementKindVariable:
-			// no next
-			if i == len(compiled)-1 {
-				vars[elem.param] = section[pos:]
-				return true, false, vars
-			}
-			// if next is const
-			nextsec := compiled[i+1]
-			switch nextsec.kind {
-			case elementKindConst:
-				index := strings.Index(section[pos:], nextsec.param)
-				if index == -1 || index == 0 {
-					// not match next const
+			switch proc.Kind {
+			case ElementKindVariable:
+				// index == 0 means const is at the start of section
+				// but prev is a variable, so it's not match prev
+				if index == 0 {
 					return false, false, nil
 				}
-				// var is bettwen pos and next sec start
-				vars[elem.param] = section[pos : pos+index]
-				pos += index
-			case elementKindVariable:
-				continue
-			case elementKindStar:
-				// var is bettwen pos to sections end
-				vars[elem.param] = strings.Join(append([]string{section[pos:]}, sections[1:]...), "")
-				return true, true, vars
+				vars[proc.Param] = token[:index]
 			}
-		case elementKindStar:
-			return true, true, vars
-		case elementKindSplit:
-			if section == "/" {
-				return true, false, vars
+			token = token[index+len(elem.Param):]
+			proc = elem
+		case ElementKindVariable:
+			proc = elem
+		case ElementKindStar:
+			token = strings.Join(append([]string{token}, tokens[1:]...), "")
+			tokens = nil
+			matchedAll = true
+			if proc.Kind != ElementKindVariable {
+				proc = elem
 			}
-			return false, false, nil
 		}
 	}
+	// unclosed
+	switch proc.Kind {
+	case ElementKindVariable:
+		vars[proc.Param] = token
+		token = ""
+	case ElementKindStar:
+		token = ""
+	}
 	// section left some chars
-	// eg.  {kind:const,param:api} and apis; 's' remain
-	if section[pos:] != "" {
+	if token != "" {
 		return false, false, nil
 	}
-	return true, false, vars
+	return true, matchedAll, vars
 }

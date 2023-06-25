@@ -22,38 +22,48 @@ import (
 func TestCompileSection(t *testing.T) {
 	tests := []struct {
 		pattern    string
-		want       []element
+		want       Section
 		wantErr    bool
 		wantErrStr string
 	}{
 		{
 			pattern: "a{v}-b{f}-g*",
-			want: []element{
-				{kind: elementKindConst, param: "a"},
-				{kind: elementKindVariable, param: "v"},
-				{kind: elementKindConst, param: "-b"},
-				{kind: elementKindVariable, param: "f"},
-				{kind: elementKindConst, param: "-g"},
-				{kind: elementKindStar},
+			want: []Element{
+				{Kind: ElementKindConst, Param: "a"},
+				{Kind: ElementKindVariable, Param: "v"},
+				{Kind: ElementKindConst, Param: "-b"},
+				{Kind: ElementKindVariable, Param: "f"},
+				{Kind: ElementKindConst, Param: "-g"},
+				{Kind: ElementKindStar},
 			},
 		},
 		{
 			pattern: "{v}{f*}**-g*",
-			want: []element{
-				{kind: elementKindVariable, param: "v"},
-				{kind: elementKindVariable, param: "f*"},
-				{kind: elementKindConst, param: "**-g"},
-				{kind: elementKindStar},
+			want: []Element{
+				{Kind: ElementKindVariable, Param: "v"},
+				{Kind: ElementKindVariable, Param: "f*"},
+				{Kind: ElementKindStar},
+				{Kind: ElementKindConst, Param: "-g"},
+				{Kind: ElementKindStar},
 			},
 		},
 		{
 			pattern: "{v}{}{f*}**-g*",
-			want: []element{
-				{kind: elementKindVariable, param: "v"},
-				{kind: elementKindVariable, param: ""},
-				{kind: elementKindVariable, param: "f*"},
-				{kind: elementKindConst, param: "**-g"},
-				{kind: elementKindStar},
+			want: []Element{
+				{Kind: ElementKindVariable, Param: "v"},
+				{Kind: ElementKindVariable, Param: ""},
+				{Kind: ElementKindVariable, Param: "f*"},
+				{Kind: ElementKindStar},
+				{Kind: ElementKindConst, Param: "-g"},
+				{Kind: ElementKindStar},
+			},
+		},
+		{
+			pattern: "{v}*:abc",
+			want: []Element{
+				{Kind: ElementKindVariable, Param: "v"},
+				{Kind: ElementKindStar},
+				{Kind: ElementKindConst, Param: ":abc"},
 			},
 		},
 		{
@@ -64,7 +74,7 @@ func TestCompileSection(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.pattern, func(t *testing.T) {
-			got, err := compileSection(tt.pattern)
+			got, err := CompileSection(tt.pattern)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("CompileSection() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -141,11 +151,16 @@ func TestMatchSection(t *testing.T) {
 			tomatch: []string{"tom:cat"},
 			want:    want{matched: true, vars: map[string]string{"a": "tom", "b": "cat"}},
 		},
+		{
+			pattern: "{a}*:cat",
+			tomatch: []string{"tom:cat"},
+			want:    want{matched: true, matchthelefts: true, vars: map[string]string{"a": "tom"}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.pattern, func(t *testing.T) {
-			compiled := mustCompileSection(tt.pattern)
-			matched, next, vars := matchSection(compiled, tt.tomatch)
+			compiled := MustCompileSection(tt.pattern)
+			matched, next, vars := compiled.Match(tt.tomatch)
 			if matched != tt.want.matched {
 				t.Errorf("MatchSection() matched = %v, want %v", matched, tt.want.matched)
 			}
@@ -163,7 +178,7 @@ func TestMustCompileSection(t *testing.T) {
 	tests := []struct {
 		pattern   string
 		wantPanic bool
-		want      []element
+		want      []Element
 	}{
 		{
 			pattern:   "{",
@@ -177,7 +192,7 @@ func TestMustCompileSection(t *testing.T) {
 					t.Errorf("The code did not panic")
 				}
 			}()
-			if got := mustCompileSection(tt.pattern); !reflect.DeepEqual(got, tt.want) {
+			if got := MustCompileSection(tt.pattern); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("MustCompileSection() = %v, want %v", got, tt.want)
 			}
 		})
