@@ -16,6 +16,7 @@ package matcher
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -29,19 +30,20 @@ const (
 )
 
 type Element struct {
-	Kind  ElementKind
-	Param string
+	Kind   ElementKind
+	Param  string
+	Regexp *regexp.Regexp
 }
 
 type CompileError struct {
 	Pattern  string
 	Position int
-	Rune     rune
+	Str      string
 	Message  string
 }
 
 func (e CompileError) Error() string {
-	return fmt.Sprintf("invalid char [%c] in [%s] at position %d: %s", e.Rune, e.Pattern, e.Position, e.Message)
+	return fmt.Sprintf("invalid [%s] in [%s] at position %d: %s", e.Str, e.Pattern, e.Position, e.Message)
 }
 
 func MustCompileSection(pattern string) Section {
@@ -58,8 +60,11 @@ func CompileSection(pattern string) (Section, error) {
 	elems := []Element{}
 	pos := 0
 	currentKind := ElementKindNone
+	curlies := 0
 	for i, rune := range pattern {
 		switch {
+		case rune == '{' && currentKind == ElementKindVariable:
+			curlies++
 		case rune == '{' && currentKind != ElementKindVariable:
 			// end a const definition
 			if currentKind == ElementKindConst {
@@ -68,10 +73,34 @@ func CompileSection(pattern string) (Section, error) {
 			// start a variable defination
 			currentKind = ElementKindVariable
 			pos = i + 1
-
 		case rune == '}' && currentKind == ElementKindVariable:
+			if curlies > 0 {
+				curlies--
+				continue
+			}
 			// end a variable defination
-			elems = append(elems, Element{Kind: ElementKindVariable, Param: pattern[pos:i]})
+			elem := Element{
+				Kind:  ElementKindVariable,
+				Param: pattern[pos:i],
+			}
+			// add regexp check
+			if j := strings.IndexRune(elem.Param, ':'); j >= 0 {
+				name, regexpStr := elem.Param[:j], elem.Param[j+1:]
+				elem.Param = name
+				if regexpStr != "" {
+					regexp, err := regexp.Compile(regexpStr)
+					if err != nil {
+						return nil, CompileError{
+							Pattern:  pattern,
+							Position: pos + j + 1,
+							Str:      regexpStr,
+							Message:  err.Error(),
+						}
+					}
+					elem.Regexp = regexp
+				}
+			}
+			elems = append(elems, elem)
 			currentKind = ElementKindNone
 			pos = i + 1
 		case rune == '*':
@@ -107,7 +136,7 @@ func CompileSection(pattern string) (Section, error) {
 			elems = append(elems, Element{Kind: ElementKindConst, Param: pattern[pos:]})
 		}
 	case ElementKindVariable:
-		return nil, CompileError{Position: len(pattern), Pattern: pattern, Rune: rune(pattern[len(pattern)-1]), Message: "variable defination not closed"}
+		return nil, CompileError{Position: len(pattern), Pattern: pattern, Str: string(pattern[len(pattern)-1]), Message: "variable defination not closed"}
 	}
 	return elems, nil
 }
@@ -135,7 +164,12 @@ func (s Section) Match(tokens []string) (bool, bool, map[string]string) {
 				if index == 0 {
 					return false, false, nil
 				}
-				vars[proc.Param] = token[:index]
+				varmatch := token[:index]
+				// regexp check failed
+				if proc.Regexp != nil && !proc.Regexp.MatchString(varmatch) {
+					return false, false, nil
+				}
+				vars[proc.Param] = varmatch
 			}
 			token = token[index+len(elem.Param):]
 			proc = elem

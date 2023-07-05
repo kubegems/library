@@ -177,6 +177,19 @@ func Test_matcher_Match(t *testing.T) {
 				"path": "wang/1",
 			},
 		},
+		{
+			registered: []string{
+				"/api/{repository}*/manifests/{reference}",
+				"/api/{repository}*/blobs/{reference}",
+			},
+			req:       "/api/lib/a/b/c/manifests/v1",
+			matched:   true,
+			wantMatch: "/api/{repository}*/manifests/{reference}",
+			vars: map[string]string{
+				"repository": "lib/a/b/c",
+				"reference":  "v1",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.req, func(t *testing.T) {

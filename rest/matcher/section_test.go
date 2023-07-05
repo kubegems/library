@@ -69,7 +69,12 @@ func TestCompileSection(t *testing.T) {
 		{
 			pattern:    "{hello",
 			wantErr:    true,
-			wantErrStr: "invalid char [o] in [{hello] at position 6: variable defination not closed",
+			wantErrStr: "invalid [o] in [{hello] at position 6: variable defination not closed",
+		},
+		{
+			pattern:    "{name:????}",
+			wantErr:    true,
+			wantErrStr: "invalid [????] in [{name:????}] at position 6: error parsing regexp: missing argument to repetition operator: `??`",
 		},
 	}
 	for _, tt := range tests {
@@ -155,6 +160,16 @@ func TestMatchSection(t *testing.T) {
 			pattern: "{a}*:cat",
 			tomatch: []string{"tom:cat"},
 			want:    want{matched: true, matchthelefts: true, vars: map[string]string{"a": "tom"}},
+		},
+		{
+			pattern: "{repository}*/index/{name}",
+			tomatch: []string{"tom/z/index/cat"},
+			want:    want{matched: true, matchthelefts: true, vars: map[string]string{"repository": "tom/z", "name": "cat"}},
+		},
+		{
+			pattern: "{repository:([a-z]{3:64}/?)+}*/index/{name}",
+			tomatch: []string{"tom/Z/index/cat"},
+			want:    want{matched: false},
 		},
 	}
 	for _, tt := range tests {

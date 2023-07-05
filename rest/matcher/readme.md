@@ -10,7 +10,7 @@
 
 ## 语法
 
-- 使用 '{' 与'}'定义变量匹配，其间的字符作为变量名称。可以使用 "{}"定义无名称变量。
+- 使用 '{' 与'}'定义变量匹配，其间的字符作为变量名称。可以使用 "{}"定义无名称变量。可以使用 `:` 作为变量名称的结束符，后续的字符作为变量的正则表达式。
 - 使用 '\*' 作为最后一个字符表示向后匹配。/{name}\*,将使 name 向后匹配。
 - 其他字符作为常规字符进行匹配。
 
@@ -71,11 +71,17 @@
   - ❌/api/v1;version=1
   - ✅/api/v/1;version=,group=1
 
-- /person/{firstname}-{lastname}
+### 增强变量匹配
 
-  - ✅/person/jack-ma;firstname=jack,lastname=ma
+- /person/{firstname:[a-z]{3}}-{lastname}
+
+  - ✅/person/tom-cat;firstname=tom,lastname=cat
   - ❌/person/jack-ma/
   - ❌/person/jackma
+
+- /{repository}\*/manifest/{reference}
+  - ✅/library/nginx/manifest/1.0;repository=library/nginx,reference=1.0
+  - ✅/library/a/b/c/manifest/1.0;repository=library/a/b/c,reference=1.0
 
 ### 向后匹配
 

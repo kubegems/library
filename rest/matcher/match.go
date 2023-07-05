@@ -17,6 +17,7 @@ package matcher
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 type PatternMatcher[T any] interface {
@@ -198,10 +199,19 @@ func variables(sections []Section) []string {
 func compilePathPattern(pattern string) ([]Section, error) {
 	sections := []Section{}
 	pathtokens := parsePathTokens(pattern)
-	for _, token := range pathtokens {
+	for i, token := range pathtokens {
 		if token == "/" {
 			sections = append(sections, []Element{{Kind: ElementKindConst, Param: "/"}})
 			continue
+		}
+		if strings.HasSuffix(token, "*") {
+			token = strings.Join(pathtokens[i:], "")
+			compiled, err := CompileSection(token)
+			if err != nil {
+				return nil, err
+			}
+			sections = append(sections, compiled)
+			break
 		}
 		compiled, err := CompileSection(token)
 		if err != nil {
