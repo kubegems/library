@@ -16,6 +16,7 @@ package matcher
 
 import (
 	"reflect"
+	"regexp"
 	"testing"
 )
 
@@ -34,32 +35,28 @@ func Test_matcher_Register(t *testing.T) {
 		{
 			args:     args{pattern: "/api/{path}*", val: "-"},
 			wanrVars: []string{"path"},
-			wantErr:  false,
-		},
-		{
-			args:     args{pattern: "/api/{path}*", val: "-"},
-			wanrVars: []string{"path"},
-			wantErr:  true,
-		},
-		{
-			args:     args{pattern: "/api/{name}*", val: "-"},
-			wanrVars: []string{"name"},
-			wantErr:  true,
 		},
 		{
 			args:     args{pattern: "/api/{name}/{path}", val: "-"},
 			wanrVars: []string{"name", "path"},
-			wantErr:  false,
 		},
 		{
-			args:     args{pattern: "/api/{name/{path}", val: "-"},
-			wanrVars: []string{"name", "path"},
-			wantErr:  true,
+			args:    args{pattern: "/api/{name/{path}", val: "-"},
+			wantErr: true,
 		},
 		{
 			args:     args{pattern: "/api/{name}/{path}:action", val: "-"},
 			wanrVars: []string{"name", "path"},
-			wantErr:  false,
+		},
+		{
+			args:     args{pattern: "/api/{name}/{path}:action", val: "-"},
+			wanrVars: []string{"name", "path"},
+			wantErr:  true, // repeat register
+		},
+		{
+			args:     args{pattern: `/api/{name}/{path:\\[}:action`, val: "-"},
+			wanrVars: []string{"name", "path"},
+			wantErr:  true,
 		},
 	}
 	for _, tt := range tests {
@@ -85,11 +82,11 @@ func Test_matcher_Match(t *testing.T) {
 	}{
 		{
 			registered: []string{
-				"/api/v1",
+				"/api/{a}",
 				"/api/v{a}*",
+				"/api/v1",
 				"/apis",
 				"/api/{a}/{b}/{c}",
-				"/api/{a}",
 				"/api/{path}*",
 			},
 			req:       "/api/v1/g/v/k",
@@ -158,11 +155,17 @@ func Test_matcher_Match(t *testing.T) {
 		},
 		{
 			registered: []string{
-				"/api/dog:wang",
+				"/api/{dog:[a-z]+}",
 			},
-			req:     "/api/dog:wang",
-			matched: true,
+			req:     "/api/HI",
+			matched: false,
 			vars:    map[string]string{},
+		},
+		{
+			registered: []string{"/api"},
+			req:        "",
+			matched:    false,
+			vars:       map[string]string{},
 		},
 		{
 			registered: []string{
@@ -179,12 +182,12 @@ func Test_matcher_Match(t *testing.T) {
 		},
 		{
 			registered: []string{
-				"/api/{repository}*/manifests/{reference}",
-				"/api/{repository}*/blobs/{reference}",
+				"/api/{repository:(?:[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*/?)+}*/manifests/{reference}",
+				"/api/{repository}*/blobs/{digest:[A-Za-z][A-Za-z0-9]*(?:[-_+.][A-Za-z][A-Za-z0-9]*)*[:][[:xdigit:]]{32,}}",
 			},
 			req:       "/api/lib/a/b/c/manifests/v1",
 			matched:   true,
-			wantMatch: "/api/{repository}*/manifests/{reference}",
+			wantMatch: "/api/{repository:(?:[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*/?)+}*/manifests/{reference}",
 			vars: map[string]string{
 				"repository": "lib/a/b/c",
 				"reference":  "v1",
@@ -215,159 +218,229 @@ func Test_matcher_Match(t *testing.T) {
 	}
 }
 
-func Test_sortSectionMatches(t *testing.T) {
-	tests := []struct {
-		name     string
-		sections []*Node[string]
-		want     []*Node[string]
-	}{
-		{
-			name: "",
-			sections: []*Node[string]{
-				{key: MustCompileSection("{var}")},
-				{key: MustCompileSection("abc")},
-			},
-			want: []*Node[string]{
-				{key: MustCompileSection("abc")},
-				{key: MustCompileSection("{var}")},
-			},
-		},
-		{
-			name: "",
-			sections: []*Node[string]{
-				{key: MustCompileSection("abc*")},
-				{key: MustCompileSection("abc")},
-			},
-			want: []*Node[string]{
-				{key: MustCompileSection("abc")},
-				{key: MustCompileSection("abc*")},
-			},
-		},
-		{
-			name: "",
-			sections: []*Node[string]{
-				{key: MustCompileSection("{var}")},
-				{key: MustCompileSection("abc*")},
-			},
-			want: []*Node[string]{
-				{key: MustCompileSection("{var}")},
-				{key: MustCompileSection("abc*")},
-			},
-		},
-		{
-			name: "",
-			sections: []*Node[string]{
-				{key: MustCompileSection("{var}")},
-				{key: MustCompileSection("abc{var}")},
-				{key: MustCompileSection("abc")},
-			},
-			want: []*Node[string]{
-				{key: MustCompileSection("abc")},
-				{key: MustCompileSection("abc{var}")},
-				{key: MustCompileSection("{var}")},
-			},
-		},
-		// {
-		// 	name: "",
-		// 	sections: []*Node[string]{
-		// 		{key: MustCompileSection("abc")},
-		// 		{key: MustCompileSection("*")},
-		// 		{key: MustCompileSection("abc{var}")},
-		// 		{key: MustCompileSection("abc*")},
-		// 		{key: MustCompileSection("{var}")},
-		// 		{key: MustCompileSection("abc{var*}")},
-		// 	},
-		// 	want: []*Node[string]{
-		// 		{key: MustCompileSection("abc")},
-		// 		{key: MustCompileSection("abc{var}")},
-		// 		{key: MustCompileSection("{var}")},
-		// 		{key: MustCompileSection("abc{var}*")},
-		// 		{key: MustCompileSection("abc*")},
-		// 		{key: MustCompileSection("*")},
-		// 	},
-		// },
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			sortSectionMatches(tt.sections)
-			if !reflect.DeepEqual(tt.sections, tt.want) {
-				t.Errorf("sortSectionMatches() got = %#v, want %#v", tt.sections, tt.want)
-			}
-		})
-	}
-}
-
 func TestParsePathTokens(t *testing.T) {
-	type args struct {
-		path string
-	}
 	tests := []struct {
-		name string
-		args args
+		path string
+
 		want []string
 	}{
 		{
-			name: "normal",
-			args: args{
-				path: "/apis/v1/abc",
-			},
-			want: []string{"/", "apis", "/", "v1", "/", "abc"},
-		},
-		{
-			name: "normal2",
-			args: args{
-				path: "apis/v1/abc",
-			},
-			want: []string{"apis", "/", "v1", "/", "abc"},
+			path: "/apis/v1/abc",
+			want: []string{"/apis", "/v1", "/abc"},
 		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := parsePathTokens(tt.args.path); !reflect.DeepEqual(got, tt.want) {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := PathTokens(tt.path); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("ParsePathTokens() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestCompilePathPattern(t *testing.T) {
+func TestCompileSection(t *testing.T) {
 	tests := []struct {
-		pattern string
+		name    string
 		want    []Section
 		wantErr bool
 	}{
 		{
-			pattern: "/api/v{version}/name*",
+			name: "/zoo/tom",
 			want: []Section{
-				{{Kind: ElementKindConst, Param: "/"}},
-				{{Kind: ElementKindConst, Param: "api"}},
-				{{Kind: ElementKindConst, Param: "/"}},
-				{{Kind: ElementKindConst, Param: "v"}, {Kind: ElementKindVariable, Param: "version"}},
-				{{Kind: ElementKindConst, Param: "/"}},
-				{{Kind: ElementKindConst, Param: "name"}, {Kind: ElementKindStar}},
+				{{Pattern: "/zoo"}},
+				{{Pattern: "/tom"}},
 			},
 		},
 		{
-			pattern: "/api/v{version}/{name}*",
+			name: "/v1/proxy*",
 			want: []Section{
-				{{Kind: ElementKindConst, Param: "/"}},
-				{{Kind: ElementKindConst, Param: "api"}},
-				{{Kind: ElementKindConst, Param: "/"}},
-				{{Kind: ElementKindConst, Param: "v"}, {Kind: ElementKindVariable, Param: "version"}},
-				{{Kind: ElementKindConst, Param: "/"}},
-				{{Kind: ElementKindVariable, Param: "name"}, {Kind: ElementKindStar}},
+				{{Pattern: "/v1"}},
+				{{Pattern: "/proxy", Greedy: true}},
+			},
+		},
+		{
+			name: "/api/v{version}/{name}*",
+			want: []Section{
+				{{Pattern: "/api"}},
+				{{Pattern: "/v"}, {Pattern: "{version}", VarName: "version"}},
+				{{Pattern: "/"}, {Pattern: "{name}", VarName: "name", Greedy: true}},
+			},
+		},
+		{
+			name: "/{repository:(?:[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*/?)+}*/manifests/{reference}",
+			want: []Section{
+				{
+					{Pattern: "/"},
+					{
+						Pattern: "{repository:(?:[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*/?)+}", VarName: "repository", Greedy: true,
+						Validate: regexp.MustCompile(`^(?:[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*/?)+$`),
+					},
+					{Pattern: "/manifests"},
+					{Pattern: "/"},
+					{Pattern: "{reference}", VarName: "reference"},
+				},
 			},
 		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.pattern, func(t *testing.T) {
-			got, err := compilePathPattern(tt.pattern)
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := CompileSection(tt.name)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("CompilePathPattern() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("Compile() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("CompilePathPattern() = %v, want %v", got, tt.want)
+				t.Errorf("Compile() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSection_Match(t *testing.T) {
+	type want struct {
+		matched bool
+		left    string
+		vars    map[string]string
+	}
+	tests := []struct {
+		pattern string
+		tomatch string
+		want    want
+	}{
+		{
+			pattern: "pre{name}suf",
+			tomatch: "prehellosuf",
+			want:    want{matched: true, vars: map[string]string{"name": "hello"}},
+		},
+		{
+			pattern: "pre{name}suf",
+			tomatch: "presuf", // 假设 name 为空时，不被匹配
+		},
+		{
+			pattern: "pre{name}",
+			tomatch: "presuf/data",
+			want:    want{matched: true, left: "/data", vars: map[string]string{"name": "suf"}},
+		},
+		{
+			pattern: "pre*",
+			tomatch: "prehellosuf/anything",
+			want:    want{matched: true, vars: map[string]string{}},
+		},
+		{
+			pattern: "pre{name}*",
+			tomatch: "prehellosuf/anything",
+			want:    want{matched: true, vars: map[string]string{"name": "hellosuf/anything"}},
+		},
+		{
+			pattern: "pre",
+			tomatch: "prehellosuf",
+		},
+		{
+			pattern: "empty",
+			tomatch: "",
+		},
+		{
+			pattern: "apis",
+			tomatch: "ap2is",
+		},
+		{
+			pattern: "apis",
+			tomatch: "api",
+		},
+		{
+			pattern: "{a}{b}",
+			tomatch: "tom",
+			want:    want{matched: true, vars: map[string]string{"b": "tom"}},
+		},
+		{
+			pattern: "{a}:{b}",
+			tomatch: "tom:cat",
+			want:    want{matched: true, vars: map[string]string{"a": "tom", "b": "cat"}},
+		},
+		{
+			pattern: "{a}*:cat",
+			tomatch: "tom:cat",
+			want:    want{matched: true, vars: map[string]string{"a": "tom"}},
+		},
+		{
+			pattern: "{repository}*/index/{name}",
+			tomatch: "tom/z/index/cat",
+			want:    want{matched: true, vars: map[string]string{"repository": "tom/z", "name": "cat"}},
+		},
+		{
+			pattern: "{repository:([a-z]{3:64}/?)+}*/index/{name}",
+			tomatch: "tom/Z/index/cat",
+			want:    want{matched: false},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.pattern, func(t *testing.T) {
+			compiled, err := Compile(tt.pattern)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			matched, left, vars := compiled.Match(PathTokens(tt.tomatch))
+			if matched != tt.want.matched {
+				t.Errorf("MatchSection() matched = %v, want %v", matched, tt.want.matched)
+			}
+			if ((len(left) == 0) != (len(tt.want.left) == 0)) && !reflect.DeepEqual(left, tt.want.left) {
+				t.Errorf("MatchSection() left = %v, want %v", left, tt.want.left)
+			}
+			if !reflect.DeepEqual(vars, tt.want.vars) {
+				t.Errorf("MatchSection() vars = %v, want %v", vars, tt.want.vars)
+			}
+		})
+	}
+}
+
+func TestSection_score(t *testing.T) {
+	tests := []struct {
+		a  string
+		b  string
+		eq int
+	}{
+		{a: "/a", b: "/{a}", eq: 1},
+		{a: "api", b: "{a}", eq: 1},
+		{a: "v{a}*", b: "{a}", eq: -1},
+		{a: "{a}*", b: "{a}*:action", eq: -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.a, func(t *testing.T) {
+			seca, _ := Compile(tt.a)
+			secb, _ := Compile(tt.b)
+
+			scorea, scoreb := seca.score(), secb.score()
+			if (scorea == scoreb && tt.eq != 0) ||
+				(scorea > scoreb && tt.eq != 1) ||
+				(scorea < scoreb && tt.eq != -1) {
+				t.Errorf("Section.score() a = %v, b= %v, want %v", scorea, scoreb, tt.eq)
+			}
+		})
+	}
+}
+
+func TestCompileError_Error(t *testing.T) {
+	tests := []struct {
+		name   string
+		fields CompileError
+		want   string
+	}{
+		{
+			fields: CompileError{
+				Pattern:  "pre{name}suf",
+				Position: 1,
+				Str:      "pre",
+				Message:  "invalid character",
+			},
+			want: "invalid [pre] in [pre{name}suf] at position 1: invalid character",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := tt.fields
+			if got := e.Error(); got != tt.want {
+				t.Errorf("CompileError.Error() = %v, want %v", got, tt.want)
 			}
 		})
 	}
