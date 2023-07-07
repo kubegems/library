@@ -46,7 +46,9 @@ func (t *Tree) Build() map[string]map[string]Route {
 }
 
 func (t *Tree) buildItems(items map[string]map[string]Route, group *Group, baseparams []Param, basetags []string, basepath string) {
-	basepath = strings.TrimRight(basepath, "/") + "/" + strings.TrimLeft(group.path, "/")
+	if group.path != "" || basepath != "" {
+		basepath = strings.TrimRight(basepath, "/") + "/" + strings.TrimLeft(group.path, "/")
+	}
 	baseparams = append(baseparams, group.params...)
 	if group.tag != "" {
 		basetags = append(basetags, group.tag)
