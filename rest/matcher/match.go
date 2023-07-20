@@ -278,12 +278,12 @@ func (s Section) score() int {
 	score := 0
 	for _, v := range s {
 		if v.Greedy {
-			score -= 99
+			score += 1
 		}
 		if v.VarName != "" {
-			score -= 10
+			score += 10
 		} else {
-			score += 1
+			score += 100
 		}
 	}
 	return score
