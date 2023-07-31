@@ -40,11 +40,10 @@ func Handler() http.Handler {
 }
 
 func Run(ctx context.Context) error {
-	var port string
-	port = os.Getenv("PPROF_PORT")
-	if port == "" {
-		port = ":6060"
+	listenaddr := os.Getenv("PPROF_PORT")
+	if listenaddr == "" {
+		listenaddr = ":6060"
 	}
 	ctx = log.NewContext(ctx, log.FromContextOrDiscard(ctx).WithValues("component", "pprof"))
-	return listen.ListenAndServeContext(ctx, port, nil, Handler())
+	return listen.ServeHTTPContext(ctx, listenaddr, Handler())
 }

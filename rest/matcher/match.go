@@ -105,7 +105,16 @@ func (n *Tree[T]) Register(pattern string, val T) ([]string, error) {
 		if index := cur.indexChild(child); index == -1 {
 			cur.children = append(cur.children, child)
 			// sort children by score, so that we can match the most likely child first
-			slices.SortFunc(cur.children, func(a, b *Tree[T]) bool { return a.key.score() > b.key.score() })
+			slices.SortFunc(cur.children, func(a, b *Tree[T]) int {
+				ascore, bscore := a.key.score(), b.key.score()
+				if ascore > bscore {
+					return -1
+				}
+				if ascore < bscore {
+					return 1
+				}
+				return 0
+			})
 		} else {
 			child = cur.children[index]
 		}
@@ -277,6 +286,9 @@ func (s Section) String() string {
 func (s Section) score() int {
 	score := 0
 	for _, v := range s {
+		if v.Pattern == "/" {
+			continue
+		}
 		if v.Greedy {
 			score += 1
 		}

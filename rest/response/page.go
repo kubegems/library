@@ -66,7 +66,7 @@ func PageFromListOptions[T any](list []T, opts request.ListOptions, namefunc fun
 	return PageFrom(list, opts.Page, opts.Size, SearchNameFunc(opts.Search, namefunc), SortByFunc(opts.Sort, namefunc, timefunc))
 }
 
-func PageFrom[T any](list []T, page, size int, pickfun func(item T) bool, sortfun func(a, b T) bool) Page[T] {
+func PageFrom[T any](list []T, page, size int, pickfun func(item T) bool, sortfun func(a, b T) int) Page[T] {
 	if page < 1 {
 		page = 1
 	}
@@ -119,43 +119,43 @@ func SearchNameFunc[T any](search string, getname func(T) string) func(T) bool {
 	}
 }
 
-func SortByFunc[T any](by string, getname func(T) string, gettime func(T) time.Time) func(a, b T) bool {
+func SortByFunc[T any](by string, getname func(T) string, gettime func(T) time.Time) func(a, b T) int {
 	switch by {
 	case "createTime", "createTimeAsc", "time":
 		if gettime == nil {
 			return nil
 		}
-		return func(a, b T) bool {
-			tima, timb := gettime(a), gettime(b)
-			if tima.Equal(timb) && getname != nil {
-				return strings.Compare(getname(a), getname(b)) == -1
+		return func(a, b T) int {
+			if timcmp := gettime(a).Compare(gettime(b)); timcmp == 0 && getname != nil {
+				return strings.Compare(getname(a), getname(b))
+			} else {
+				return timcmp
 			}
-			return tima.Before(timb)
 		}
 	case "createTimeDesc", "time-", "": // default sort by time desc
 		if gettime == nil {
 			return nil
 		}
-		return func(a, b T) bool {
-			tima, timb := gettime(a), gettime(b)
-			if tima.Equal(timb) && getname != nil {
-				return strings.Compare(getname(a), getname(b)) == 1
+		return func(a, b T) int {
+			if timcmp := gettime(b).Compare(gettime(a)); timcmp == 0 && getname != nil {
+				return strings.Compare(getname(a), getname(b))
+			} else {
+				return timcmp
 			}
-			return tima.After(timb)
 		}
 	case "name":
 		if getname == nil {
 			return nil
 		}
-		return func(a, b T) bool {
-			return strings.Compare(getname(a), getname(b)) == -1
+		return func(a, b T) int {
+			return strings.Compare(getname(a), getname(b))
 		}
 	case "nameDesc", "name-":
 		if getname == nil {
 			return nil
 		}
-		return func(a, b T) bool {
-			return strings.Compare(getname(a), getname(b)) == 1
+		return func(a, b T) int {
+			return strings.Compare(getname(b), getname(a))
 		}
 	default:
 		return nil

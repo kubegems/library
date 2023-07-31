@@ -23,60 +23,50 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-logr/logr"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
+	"kubegems.io/library/log"
 )
 
-func ListenAndServeContext(ctx context.Context, listen string, tls *tls.Config, handler http.Handler) error {
-	return ListenAndServeContextGRPCAndHTTP(ctx, listen, tls, handler, nil)
+func ServeHTTPContext(ctx context.Context, listen string, handler http.Handler) error {
+	return ServeContext(ctx, listen, handler, "", "")
 }
 
-func ListenAndServeContextGRPCAndHTTP(ctx context.Context, listen string, tls *tls.Config, httphandler http.Handler, grpchandler http.Handler) error {
-	log := logr.FromContextOrDiscard(ctx)
-	if grpchandler != nil {
-		httphandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.ProtoMajor == 2 && strings.HasPrefix(
-				r.Header.Get("Content-Type"), "application/grpc") {
-				grpchandler.ServeHTTP(w, r)
-			} else {
-				httphandler.ServeHTTP(w, r)
-			}
-		})
-	}
+func ServeContext(ctx context.Context, listen string, handler http.Handler, cert, key string) error {
 	s := http.Server{
-		Handler:   httphandler,
-		Addr:      listen,
-		TLSConfig: tls,
+		Handler: handler,
+		Addr:    listen,
 		BaseContext: func(_ net.Listener) context.Context {
 			return ctx
 		},
 	}
 	go func() {
 		<-ctx.Done()
-		log.Info("shutting down server", "addr", listen)
+		log.Info("closing http(s) server", "listen", listen)
 		s.Close()
 	}()
-	// nolint: nestif
-	if s.TLSConfig != nil {
+	if cert != "" && key != "" {
 		// http2 support with tls enabled
 		http2.ConfigureServer(&s, &http2.Server{})
-		if grpchandler != nil {
-			log.Info("starting https(grpc) server", "addr", listen)
-		} else {
-			log.Info("starting https server", "addr", listen)
-		}
-		return s.ListenAndServeTLS("", "")
+		log.Info("starting https server", "listen", listen)
+		return s.ListenAndServeTLS(cert, key)
 	} else {
 		// http2 support without https
 		s.Handler = h2c.NewHandler(s.Handler, &http2.Server{})
-		if grpchandler != nil {
-			log.Info("starting http(grpc) server", "addr", listen)
-		} else {
-			log.Info("starting http server", "addr", listen)
-		}
+		log.Info("starting http server", "listen", listen)
 		return s.ListenAndServe()
 	}
+}
+
+func GRPCHTTPMux(httphandler http.Handler, grpchandler http.Handler) http.Handler {
+	httphandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			grpchandler.ServeHTTP(w, r)
+		} else {
+			httphandler.ServeHTTP(w, r)
+		}
+	})
+	return httphandler
 }
 
 func TLSConfig(cafile, certfile, keyfile string) (*tls.Config, error) {

@@ -19,6 +19,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"kubegems.io/library/rest/api"
 )
 
 const MB = 1 << 20
@@ -27,6 +29,7 @@ type AuditOptions struct {
 	RecordRead             bool     // Record read actions
 	RecordBodyContentTypes []string // Record only for these content types
 	MaxBodySize            int      // Max body size to record,0 means disable
+	WhiteList              []string // White list
 }
 
 func NewDefaultAuditOptions() *AuditOptions {
@@ -123,7 +126,7 @@ type SimpleAuditor struct {
 	Options *AuditOptions
 }
 
-func NewSimpleAuditor(apiprefix string, options *AuditOptions, whitelist ...string) *SimpleAuditor {
+func NewSimpleAuditor(apiprefix string, options *AuditOptions) *SimpleAuditor {
 	if !strings.HasPrefix(apiprefix, "/") {
 		apiprefix = "/" + apiprefix
 	}
@@ -230,8 +233,10 @@ func splitResourceAction(path string) (string, string) {
 	}
 }
 
-func NewHTTPAuditorHandler(auditor HTTPAuditor, sink AuditSink, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func HTTPAuditorFilter(ctx context.Context, prefix string, opt *AuditOptions, sink AuditSink) api.Filter {
+	auditor := NewSimpleAuditor(prefix, opt)
+	sink = NewCachedAuditSink(ctx, sink, 0) // add a cache queue
+	return func(w http.ResponseWriter, r *http.Request, next http.Handler) {
 		ww, auditlog := auditor.OnRequest(w, r) // audit request
 		if auditlog == nil {                    // no audit log, skip
 			next.ServeHTTP(ww, r)
@@ -243,11 +248,5 @@ func NewHTTPAuditorHandler(auditor HTTPAuditor, sink AuditSink, next http.Handle
 		next.ServeHTTP(ww, r)               // process request and response
 		auditor.OnResponse(ww, r, auditlog) // audit response
 		_ = sink.Save(auditlog)             // save audit log
-	})
-}
-
-func NewHTTPAuditorMiddleware(auditor HTTPAuditor, sink AuditSink) MiddlewareFunc {
-	return func(next http.Handler) http.Handler {
-		return NewHTTPAuditorHandler(auditor, sink, next)
 	}
 }

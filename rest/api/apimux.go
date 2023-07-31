@@ -15,85 +15,126 @@
 package api
 
 import (
+	"context"
 	"net/http"
-	"path"
 
 	"github.com/go-openapi/spec"
-	"kubegems.io/library/log"
-	"kubegems.io/library/rest/filters"
+	"kubegems.io/library/rest/listen"
+	"kubegems.io/library/rest/matcher"
 	"kubegems.io/library/rest/mux"
 	"kubegems.io/library/rest/openapi"
-	libreflector "kubegems.io/library/rest/reflector"
 	"kubegems.io/library/rest/response"
 )
 
 type API struct {
-	options  *APIOptions
-	swagger  *spec.Swagger
-	mactcher *mux.MethodServeMux
+	tls     tlsfiles
+	filters PatternFilters
+	swagger *spec.Swagger
+	builder *openapi.Builder
+	mux     *mux.MethodServeMux
 }
 
-type APIOptions struct {
-	Prefix           string
-	HealthCheck      func() error
-	SwaggerCompleter func(swagger *spec.Swagger)
-	Filters          filters.Filters
+type tlsfiles struct {
+	crt string
+	key string
 }
 
-func NewAPI(options APIOptions) *API {
-	swagger := &spec.Swagger{SwaggerProps: spec.SwaggerProps{Swagger: "2.0"}}
-	if options.SwaggerCompleter == nil {
-		options.SwaggerCompleter = KubegemsSwaggerCompleter
+func NewAPI() *API {
+	swagger := &spec.Swagger{SwaggerProps: spec.SwaggerProps{
+		Swagger:     "2.0",
+		Definitions: map[string]spec.Schema{},
+	}}
+	return &API{
+		swagger: swagger,
+		mux:     mux.NewMethodServeMux(),
+		filters: PatternFilters{},
+		builder: openapi.NewBuilder(openapi.InterfaceBuildOptionDefault, swagger.Definitions),
 	}
-	options.SwaggerCompleter(swagger)
-	mux := mux.NewMethodServeMux()
-	mux.HandleFunc("GET", path.Join(options.Prefix, "/docs.json"), Swagger(swagger))
-	mux.HandleFunc("GET", "/healthz", Healthz(options.HealthCheck))
-	return &API{swagger: swagger, options: &options, mactcher: mux}
 }
 
-func (m *API) RegisterController(parents []string, controller any) error {
-	return libreflector.Register(m.mactcher, m.swagger, m.options.Prefix, parents, controller)
-}
-
-func (m *API) RegisterModules(modules ...RestModule) *API {
-	rg := NewGroup(m.options.Prefix)
-	for _, module := range modules {
-		module.RegisterRoute(rg)
+func (m *API) Filter(pattern string, filters ...Filter) *API {
+	sec, err := matcher.Compile(pattern)
+	if err != nil {
+		panic(err)
 	}
-	tree := Tree{
-		Group:           rg,
-		RouteUpdateFunc: ListWrrapperFunc,
-	}
-	tree.AddToMux(m.mactcher)
-	tree.AddToSwagger(m.swagger, openapi.NewBuilder(openapi.InterfaceBuildOptionDefault))
+	m.filters = append(m.filters, PatternFilter{Pattern: sec, Filters: filters})
 	return m
 }
 
-func (m *API) Handle(method string, pattern string, handler http.Handler) {
-	m.mactcher.Handle(method, pattern, handler)
+func (m *API) Route(route *Route) *API {
+	m.mux.HandleFunc(route.Method, route.Path, route.Func)
+	AddSwaggerOperation(m.swagger, route, m.builder)
+	return m
+}
+
+func (m *API) Register(prefix string, modules ...Module) *API {
+	rg := NewGroup(prefix)
+	for _, module := range modules {
+		module.RegisterRoute(rg)
+	}
+	for _, methods := range rg.BuildRoutes() {
+		for _, route := range methods {
+			m.Route(route)
+		}
+	}
+	return m
 }
 
 func (m *API) BuildHandler() http.Handler {
-	handler := http.Handler(m.mactcher)
-	handler = LogFilter(log.Logger, handler) // log
-	return handler
+	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+		m.filters.Process(resp, req, m.mux)
+	})
 }
 
-func Healthz(checkfun func() error) http.HandlerFunc {
-	return func(resp http.ResponseWriter, req *http.Request) {
+func (m *API) TLS(cert, key string) *API {
+	m.tls = tlsfiles{crt: cert, key: key}
+	return m
+}
+
+func (m *API) Serve(ctx context.Context, listenaddr string) error {
+	return listen.ServeContext(ctx, listenaddr, m.BuildHandler(), m.tls.crt, m.tls.key)
+}
+
+func (m *API) HealthCheck(checkfun func() error) *API {
+	return m.Route(GET("/healthz").Doc("health check").To(func(resp http.ResponseWriter, req *http.Request) {
 		if checkfun != nil {
 			if err := checkfun(); err != nil {
 				response.ServerError(resp, err)
 				return
 			}
 		}
-		response.OK(resp, "ok")
-	}
+		response.Raw(resp, http.StatusOK, "ok", nil)
+	}))
 }
 
-func Swagger(swagger *spec.Swagger) http.HandlerFunc {
-	return func(resp http.ResponseWriter, req *http.Request) {
-		response.Raw(resp, http.StatusOK, swagger, nil)
+func (m *API) APIDoc(completer func(swagger *spec.Swagger)) *API {
+	if completer != nil {
+		completer(m.swagger)
 	}
+	// api doc
+	specPath := "/docs/api.json"
+	m.Route(GET(specPath).Doc("swagger api doc").To(func(resp http.ResponseWriter, req *http.Request) {
+		response.Raw(resp, http.StatusOK, m.swagger, nil)
+	}))
+	// UI
+	redocui, swaggerui := NewRedocUI(specPath), NewSwaggerUI(specPath)
+	m.Route(GET("/docs").
+		Doc("swagger api html").
+		Parameters(QueryParameter("provider", "UI provider").In("swagger", "redoc")).
+		To(func(resp http.ResponseWriter, req *http.Request) {
+			switch req.URL.Query().Get("provider") {
+			case "swagger", "":
+				renderHTML(resp, swaggerui)
+			case "redoc":
+				renderHTML(resp, redocui)
+			}
+		}),
+	)
+	return m
+}
+
+func (m *API) Version(data any) *API {
+	return m.Route(GET("/version").Doc("version").To(func(resp http.ResponseWriter, req *http.Request) {
+		response.Raw(resp, http.StatusOK, data, nil)
+	}))
 }

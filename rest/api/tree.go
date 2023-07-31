@@ -19,59 +19,14 @@ import (
 	"strings"
 
 	"github.com/go-openapi/spec"
-	"golang.org/x/exp/maps"
-	"kubegems.io/library/rest/mux"
 	"kubegems.io/library/rest/openapi"
 )
 
-type RestModule interface {
+type Module interface {
 	RegisterRoute(r *Group)
 }
 
 type Function = http.HandlerFunc
-
-type Tree struct {
-	Group           *Group
-	RouteUpdateFunc func(r *Route) // can update route setting before build
-	built           map[string]map[string]Route
-}
-
-func (t *Tree) Build() map[string]map[string]Route {
-	if t.built == nil {
-		items := map[string]map[string]Route{}
-		t.buildItems(items, t.Group, nil, nil, "")
-		t.built = items
-	}
-	return t.built
-}
-
-func (t *Tree) buildItems(items map[string]map[string]Route, group *Group, baseparams []Param, basetags []string, basepath string) {
-	if group.path != "" || basepath != "" {
-		basepath = strings.TrimRight(basepath, "/") + "/" + strings.TrimLeft(group.path, "/")
-	}
-	baseparams = append(baseparams, group.params...)
-	if group.tag != "" {
-		basetags = append(basetags, group.tag)
-	}
-	for i := range group.routes {
-		route := group.routes[i] // todo: deep copy route
-		route.Tags = append(basetags, route.Tags...)
-		route.Params = append(baseparams, route.Params...)
-		route.Path = basepath + route.Path
-		methods, ok := items[route.Path]
-		if !ok {
-			methods = map[string]Route{}
-			items[route.Path] = methods
-		}
-		if t.RouteUpdateFunc != nil {
-			t.RouteUpdateFunc(route)
-		}
-		methods[route.Method] = *route
-	}
-	for _, group := range group.subGroups {
-		t.buildItems(items, group, baseparams, basetags, basepath)
-	}
-}
 
 type Group struct {
 	tag       string
@@ -127,10 +82,11 @@ type ResponseMeta struct {
 }
 
 func Do(method string, path string) *Route {
-	return &Route{
-		Method: method,
-		Path:   path,
-	}
+	return &Route{Method: method, Path: path}
+}
+
+func Any(path string) *Route {
+	return Do("", path)
 }
 
 func OPTIONS(path string) *Route {
@@ -166,19 +122,8 @@ func (n *Route) To(fun Function) *Route {
 	return n
 }
 
-func (n *Route) ShortDesc(summary string) *Route {
-	n.Summary = summary
-	return n
-}
-
 func (n *Route) Doc(summary string) *Route {
 	n.Summary = summary
-	return n
-}
-
-func (n *Route) Paged() *Route {
-	n.Params = append(n.Params, QueryParameter("page", "page number").Optional())
-	n.Params = append(n.Params, QueryParameter("size", "page size").Optional())
 	return n
 }
 
@@ -199,8 +144,8 @@ func (n *Route) ContentType(mime ...string) *Route {
 	return n
 }
 
-func (n *Route) Response(body interface{}, descs ...string) *Route {
-	n.Responses = append(n.Responses, ResponseMeta{Code: http.StatusOK, Body: body, Description: strings.Join(descs, "")})
+func (n *Route) Response(body interface{}, desc ...string) *Route {
+	n.Responses = append(n.Responses, ResponseMeta{Code: http.StatusOK, Body: body, Description: strings.Join(desc, "")})
 	return n
 }
 
@@ -274,60 +219,75 @@ func (p Param) In(t ...any) Param {
 	return p
 }
 
-func (t *Tree) AddToMux(mux *mux.MethodServeMux) {
-	for path, methods := range t.Build() {
-		for method, route := range methods {
-			mux.HandleFunc(method, path, route.Func)
+func (t *Group) BuildRoutes() map[string]map[string]*Route {
+	items := map[string]map[string]*Route{}
+	t.buildItems(items, nil, nil, "")
+	return items
+}
+
+func (group *Group) buildItems(items map[string]map[string]*Route, baseparams []Param, basetags []string, basepath string) {
+	if group.path != "" || basepath != "" {
+		basepath = strings.TrimRight(basepath, "/") + "/" + strings.TrimLeft(group.path, "/")
+	}
+	baseparams = append(baseparams, group.params...)
+	if group.tag != "" {
+		basetags = append(basetags, group.tag)
+	}
+	for i := range group.routes {
+		route := group.routes[i] // todo: deep copy route
+		route.Tags = append(basetags, route.Tags...)
+		route.Params = append(baseparams, route.Params...)
+		route.Path = basepath + route.Path
+		methods, ok := items[route.Path]
+		if !ok {
+			methods = map[string]*Route{}
+			items[route.Path] = methods
 		}
+		methods[route.Method] = route
+	}
+	for _, group := range group.subGroups {
+		group.buildItems(items, baseparams, basetags, basepath)
 	}
 }
 
-func (tree Tree) AddToSwagger(swagger *spec.Swagger, builder *openapi.Builder) {
+func AddSwaggerOperation(swagger *spec.Swagger, route *Route, builder *openapi.Builder) {
+	operation := buildRouteOperation(route, builder)
 	if swagger.Paths == nil {
 		swagger.Paths = &spec.Paths{}
 	}
 	if swagger.Paths.Paths == nil {
 		swagger.Paths.Paths = map[string]spec.PathItem{}
 	}
-	for path, methods := range tree.Build() {
-		pathItem := spec.PathItem{}
-		for method, route := range methods {
-			operation := buildRouteOperation(route, builder)
-			switch method {
-			case http.MethodGet, "":
-				pathItem.Get = operation
-			case http.MethodPost:
-				pathItem.Post = operation
-			case http.MethodPut:
-				pathItem.Put = operation
-			case http.MethodDelete:
-				pathItem.Delete = operation
-			case http.MethodPatch:
-				pathItem.Patch = operation
-			case http.MethodHead:
-				pathItem.Head = operation
-			case http.MethodOptions:
-				pathItem.Options = operation
-			}
-		}
-		swagger.Paths.Paths[path] = pathItem
+	pathItem := swagger.Paths.Paths[route.Path]
+	switch route.Method {
+	case http.MethodGet, "":
+		pathItem.Get = operation
+	case http.MethodPost:
+		pathItem.Post = operation
+	case http.MethodPut:
+		pathItem.Put = operation
+	case http.MethodDelete:
+		pathItem.Delete = operation
+	case http.MethodPatch:
+		pathItem.Patch = operation
+	case http.MethodHead:
+		pathItem.Head = operation
+	case http.MethodOptions:
+		pathItem.Options = operation
 	}
-	if swagger.Definitions == nil {
-		swagger.Definitions = map[string]spec.Schema{}
-	}
-	maps.Copy(swagger.Definitions, builder.Definitions)
+	swagger.Paths.Paths[route.Path] = pathItem
 }
 
-func buildRouteOperation(route Route, builder *openapi.Builder) *spec.Operation {
+func buildRouteOperation(route *Route, builder *openapi.Builder) *spec.Operation {
 	return &spec.Operation{
 		OperationProps: spec.OperationProps{
-			ID: "",
+			ID: route.Method + " " + route.Path,
 			Tags: func() []string {
 				if len(route.Tags) > 0 {
 					// only use the last tag
 					return route.Tags[len(route.Tags)-1:]
 				}
-				return route.Tags
+				return []string{"Default"} // default tag
 			}(),
 			Summary:     route.Summary,
 			Description: route.Summary,

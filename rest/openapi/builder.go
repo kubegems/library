@@ -23,7 +23,10 @@ import (
 	"github.com/go-openapi/spec"
 )
 
-var DefaultBuilder = NewBuilder(InterfaceBuildOptionOverride)
+var (
+	DefaultDefinitions = map[string]spec.Schema{}
+	DefaultBuilder     = NewBuilder(InterfaceBuildOptionOverride, DefaultDefinitions)
+)
 
 const DefinitionsRoot = "#/definitions/"
 
@@ -43,9 +46,9 @@ const (
 
 type SchemaBuildFunc func(v reflect.Value) *spec.Schema
 
-func NewBuilder(interfaceOption InterfaceBuildOption) *Builder {
+func NewBuilder(interfaceOption InterfaceBuildOption, definations map[string]spec.Schema) *Builder {
 	return &Builder{
-		Definitions:          make(map[string]spec.Schema),
+		Definitions:          definations,
 		InterfaceBuildOption: interfaceOption,
 	}
 }

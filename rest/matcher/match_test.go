@@ -95,119 +95,117 @@ func Test_matcher_Match(t *testing.T) {
 				"c": "v1",
 			},
 		},
-		// {
-		// 	registered: []string{
-		// 		"/api/{a}",
-		// 		"/api/v{a}*",
-		// 		"/api/v1",
-		// 		"/apis",
-		// 		"/api/{a}/{b}/{c}",
-		// 		"/api/{path}*",
-		// 	},
-		// 	req:       "/api/v1/g/v/k",
-		// 	matched:   true,
-		// 	wantMatch: "/api/v{a}*",
-		// 	vars: map[string]string{
-		// 		"a": "1/g/v/k",
-		// 	},
-		// },
-		// {
-		// 	registered: []string{
-		// 		"/v1/service-proxy/{realpath}*",
-		// 		"/v1/{group}/{version}/{resource}",
-		// 	},
-		// 	req:       "/v1/service-proxy/js/t2.js",
-		// 	matched:   true,
-		// 	wantMatch: "/v1/service-proxy/{realpath}*",
-		// 	vars: map[string]string{
-		// 		"realpath": "js/t2.js",
-		// 	},
-		// },
-		// {
-		// 	registered: []string{
-		// 		"/v1/{group}/{version}/{resource}/{name}",
-		// 		"/v1/{group}/{version}/configmap/{name}",
-		// 	},
-		// 	req:       "/v1/core/v1/configmap/abc",
-		// 	matched:   true,
-		// 	wantMatch: "/v1/{group}/{version}/configmap/{name}",
-		// 	vars: map[string]string{
-		// 		"group":   "core",
-		// 		"version": "v1",
-		// 		"name":    "abc",
-		// 	},
-		// },
-		// {
-		// 	registered: []string{
-		// 		"/api/v{a}*",
-		// 		"/api/{a}/{b}/{c}",
-		// 		"/api/{path}*",
-		// 	},
-		// 	req:       "/api/v2/v/k",
-		// 	matched:   true,
-		// 	wantMatch: "/api/{a}/{b}/{c}",
-		// 	vars: map[string]string{
-		// 		"a": "v2",
-		// 		"b": "v",
-		// 		"c": "k",
-		// 	},
-		// },
-		// {
-		// 	registered: []string{
-		// 		"/api/s",
-		// 	},
-		// 	req:     "/api",
-		// 	matched: false,
-		// 	vars:    map[string]string{},
-		// },
-		// {
-		// 	registered: []string{
-		// 		"/api/dog:wang",
-		// 	},
-		// 	req:     "/api/dog",
-		// 	matched: false,
-		// 	vars:    map[string]string{},
-		// },
-		// {
-		// 	registered: []string{
-		// 		"/api/{dog:[a-z]+}",
-		// 	},
-		// 	req:     "/api/HI",
-		// 	matched: false,
-		// 	vars:    map[string]string{},
-		// },
-		// {
-		// 	registered: []string{"/api"},
-		// 	req:        "",
-		// 	matched:    false,
-		// 	vars:       map[string]string{},
-		// },
-		// {
-		// 	registered: []string{
-		// 		"/api/{name}/{path}*:action",
-		// 		"/api/{name}/{path}*",
-		// 	},
-		// 	req:       "/api/dog/wang/1:action",
-		// 	matched:   true,
-		// 	wantMatch: "/api/{name}/{path}*:action",
-		// 	vars: map[string]string{
-		// 		"name": "dog",
-		// 		"path": "wang/1",
-		// 	},
-		// },
-		// {
-		// 	registered: []string{
-		// 		"/api/{repository:(?:[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*/?)+}*/manifests/{reference}",
-		// 		"/api/{repository}*/blobs/{digest:[A-Za-z][A-Za-z0-9]*(?:[-_+.][A-Za-z][A-Za-z0-9]*)*[:][[:xdigit:]]{32,}}",
-		// 	},
-		// 	req:       "/api/lib/a/b/c/manifests/v1",
-		// 	matched:   true,
-		// 	wantMatch: "/api/{repository:(?:[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*/?)+}*/manifests/{reference}",
-		// 	vars: map[string]string{
-		// 		"repository": "lib/a/b/c",
-		// 		"reference":  "v1",
-		// 	},
-		// },
+		{
+			registered: []string{
+				"/api/{a}",
+				"/api/v{a}*",
+				"/api/v1",
+				"/apis",
+				"/api/{a}/{b}/{c}",
+				"/api/{path}*",
+			},
+			req:       "/api/v1/g/v/k",
+			matched:   true,
+			wantMatch: "/api/v{a}*",
+			vars: map[string]string{
+				"a": "1/g/v/k",
+			},
+		},
+		{
+			registered: []string{
+				"/v1/service-proxy/{realpath}*",
+				"/v1/{group}/{version}/{resource}",
+			},
+			req:       "/v1/service-proxy/js/t2.js",
+			matched:   true,
+			wantMatch: "/v1/service-proxy/{realpath}*",
+			vars: map[string]string{
+				"realpath": "js/t2.js",
+			},
+		},
+		{
+			registered: []string{
+				"/v1/{group}/{version}/{resource}/{name}",
+				"/v1/{group}/{version}/configmap/{name}",
+			},
+			req:       "/v1/core/v1/configmap/abc",
+			matched:   true,
+			wantMatch: "/v1/{group}/{version}/configmap/{name}",
+			vars: map[string]string{
+				"group":   "core",
+				"version": "v1",
+				"name":    "abc",
+			},
+		},
+		{
+			registered: []string{
+				"/api/v{a}*",
+				"/api/{a}/{b}/{c}",
+				"/api/{path}*",
+			},
+			req:       "/api/v2/v/k",
+			matched:   true,
+			wantMatch: "/api/v{a}*",
+			vars: map[string]string{
+				"a": "2/v/k",
+			},
+		},
+		{
+			registered: []string{
+				"/api/s",
+			},
+			req:     "/api",
+			matched: false,
+			vars:    map[string]string{},
+		},
+		{
+			registered: []string{
+				"/api/dog:wang",
+			},
+			req:     "/api/dog",
+			matched: false,
+			vars:    map[string]string{},
+		},
+		{
+			registered: []string{
+				"/api/{dog:[a-z]+}",
+			},
+			req:     "/api/HI",
+			matched: false,
+			vars:    map[string]string{},
+		},
+		{
+			registered: []string{"/api"},
+			req:        "",
+			matched:    false,
+			vars:       map[string]string{},
+		},
+		{
+			registered: []string{
+				"/api/{name}/{path}*:action",
+				"/api/{name}/{path}*",
+			},
+			req:       "/api/dog/wang/1:action",
+			matched:   true,
+			wantMatch: "/api/{name}/{path}*:action",
+			vars: map[string]string{
+				"name": "dog",
+				"path": "wang/1",
+			},
+		},
+		{
+			registered: []string{
+				"/api/{repository:(?:[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*/?)+}*/manifests/{reference}",
+				"/api/{repository}*/blobs/{digest:[A-Za-z][A-Za-z0-9]*(?:[-_+.][A-Za-z][A-Za-z0-9]*)*[:][[:xdigit:]]{32,}}",
+			},
+			req:       "/api/lib/a/b/c/manifests/v1",
+			matched:   true,
+			wantMatch: "/api/{repository:(?:[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*/?)+}*/manifests/{reference}",
+			vars: map[string]string{
+				"repository": "lib/a/b/c",
+				"reference":  "v1",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.req, func(t *testing.T) {
