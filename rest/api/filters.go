@@ -148,7 +148,7 @@ func OIDCAuthFilter(ctx context.Context, opts *OIDCClientOptions) Filter {
 			response.Unauthorized(w, "invalid access token")
 			return
 		}
-		r.WithContext(NewUsernameContext(r.Context(), idtoken.Subject))
+		r = r.WithContext(NewUsernameContext(r.Context(), idtoken.Subject))
 		next.ServeHTTP(w, r)
 	}
 }
