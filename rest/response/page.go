@@ -33,6 +33,10 @@ type Page[T any] struct {
 	Size  int64 `json:"size"`
 }
 
+func PageObjectFromRequest[T any](req *http.Request, list []T) Page[T] {
+	return PageObjectFromListOptions(list, request.GetListOptions(req))
+}
+
 // PageObjectFromListOptions used for client.Object pagination T in list
 // use any of T to suit for both eg. Pod(not implement metav1.Object) and *Pod(metav1.Object)
 func PageObjectFromListOptions[T any](list []T, opts request.ListOptions) Page[T] {
