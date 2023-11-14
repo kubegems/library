@@ -27,7 +27,61 @@ import (
 	"kubegems.io/library/rest/response"
 )
 
-type Filter func(w http.ResponseWriter, r *http.Request, next http.Handler)
+type FilterHolder interface {
+	Filter
+	Register(pattern string, filters ...Filter) error
+}
+
+type Filter interface {
+	Process(w http.ResponseWriter, r *http.Request, next http.Handler)
+}
+
+type FilterFunc func(w http.ResponseWriter, r *http.Request, next http.Handler)
+
+func (f FilterFunc) Process(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	f(w, r, next)
+}
+
+type PredicatedFilter struct {
+	Predicate func(r *http.Request) bool
+	Filter    Filter
+}
+
+func (f PredicatedFilter) Process(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	if f.Predicate != nil || !f.Predicate(r) {
+		next.ServeHTTP(w, r)
+	} else {
+		f.Filter.Process(w, r, next)
+	}
+}
+
+type SimpleFilters struct {
+	Node matcher.Node[Filters]
+}
+
+var _ FilterHolder = (*SimpleFilters)(nil)
+
+func NewFilters() *SimpleFilters {
+	return &SimpleFilters{}
+}
+
+func (t *SimpleFilters) Register(pattern string, filters ...Filter) error {
+	_, node, err := t.Node.Get(pattern)
+	if err != nil {
+		return err
+	}
+	node.Value = append(node.Value, filters...)
+	return nil
+}
+
+func (t *SimpleFilters) Process(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	node, _ := t.Node.Match(r.URL.Path, nil)
+	if node == nil {
+		next.ServeHTTP(w, r)
+		return
+	}
+	node.Value.Process(w, r, next)
+}
 
 type Filters []Filter
 
@@ -36,34 +90,13 @@ func (fs Filters) Process(w http.ResponseWriter, r *http.Request, next http.Hand
 		next.ServeHTTP(w, r)
 		return
 	}
-	fs[0](w, r, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fs[0].Process(w, r, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fs[1:].Process(w, r, next)
 	}))
 }
 
-type PatternFilter struct {
-	Pattern matcher.Section
-	Filters Filters
-}
-
-type PatternFilters []PatternFilter
-
-func (p PatternFilters) Process(w http.ResponseWriter, r *http.Request, next http.Handler) {
-	if len(p) == 0 {
-		next.ServeHTTP(w, r)
-		return
-	}
-	if match, _, _ := p[0].Pattern.Match(matcher.PathTokens(r.URL.Path)); !match {
-		p[1:].Process(w, r, next)
-		return
-	}
-	p[0].Filters.Process(w, r, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p[1:].Process(w, r, next)
-	}))
-}
-
 func CORSFilter() Filter {
-	return func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
 		orgin := r.Header.Get("Origin")
 		if orgin == "" {
 			next.ServeHTTP(w, r)
@@ -73,11 +106,11 @@ func CORSFilter() Filter {
 		w.Header().Set("Access-Control-Allow-Methods", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "*")
 		next.ServeHTTP(w, r)
-	}
+	})
 }
 
 func LoggingFilter(log logr.Logger) Filter {
-	return func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
 		start := time.Now()
 		ww := &StatusResponseWriter{ResponseWriter: w}
 		next.ServeHTTP(ww, r)
@@ -87,7 +120,7 @@ func LoggingFilter(log logr.Logger) Filter {
 			"remote", r.RemoteAddr,
 			"code", ww.StatusCode,
 			"duration", duration.String())
-	}
+	})
 }
 
 type StatusResponseWriter struct {
@@ -106,12 +139,12 @@ type OIDCClientOptions struct {
 	NoAuthPatterns []string // white list pathes, match by path.Match
 }
 
-func OIDCAuthFilter(ctx context.Context, opts *OIDCClientOptions) Filter {
+func OIDCFilter(ctx context.Context, opts *OIDCClientOptions) Filter {
 	// no oidc
 	if opts.Issuer == "" {
-		return func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
 			next.ServeHTTP(w, r)
-		}
+		})
 	}
 	ctx = oidc.InsecureIssuerURLContext(ctx, opts.Issuer)
 	provider, err := oidc.NewProvider(ctx, opts.Issuer)
@@ -122,7 +155,7 @@ func OIDCAuthFilter(ctx context.Context, opts *OIDCClientOptions) Filter {
 		SkipClientIDCheck: opts.Audience == "",
 		SkipIssuerCheck:   true,
 	})
-	return func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
 		for _, pattern := range opts.NoAuthPatterns {
 			if match, _ := path.Match(pattern, r.URL.Path); match {
 				next.ServeHTTP(w, r)
@@ -148,20 +181,28 @@ func OIDCAuthFilter(ctx context.Context, opts *OIDCClientOptions) Filter {
 			response.Unauthorized(w, "invalid access token")
 			return
 		}
-		r = r.WithContext(NewUsernameContext(r.Context(), idtoken.Subject))
+		r = r.WithContext(NewOIDCContext(r.Context(), OIDCInfo{
+			Username: idtoken.Subject,
+			Token:    token,
+		}))
 		next.ServeHTTP(w, r)
-	}
+	})
 }
 
-type contextUsernameKey struct{}
+type contextOIDCKey struct{}
 
-func UsernameFromContext(ctx context.Context) string {
-	if username, ok := ctx.Value(contextUsernameKey{}).(string); ok {
-		return username
-	}
-	return ""
+type OIDCInfo struct {
+	Username string `json:"username,omitempty"`
+	Token    string `json:"token,omitempty"`
 }
 
-func NewUsernameContext(ctx context.Context, username string) context.Context {
-	return context.WithValue(ctx, contextUsernameKey{}, username)
+func NewOIDCContext(ctx context.Context, val OIDCInfo) context.Context {
+	return context.WithValue(ctx, contextOIDCKey{}, val)
+}
+
+func OIDCFromContext(ctx context.Context) OIDCInfo {
+	if val, ok := ctx.Value(contextOIDCKey{}).(OIDCInfo); ok {
+		return val
+	}
+	return OIDCInfo{}
 }

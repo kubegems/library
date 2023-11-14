@@ -24,9 +24,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
-	"kubegems.io/library/rest/mux"
 )
+
+var PathVarsFunc = func(r *http.Request) map[string]string {
+	return nil
+}
 
 type ListOptions struct {
 	Page   int    `json:"page,omitempty"`
@@ -53,9 +55,16 @@ func HeaderOrQuery[T any](r *http.Request, key string, defaultValue T) T {
 	}
 }
 
+func PathVars(r *http.Request) map[string]string {
+	return PathVarsFunc(r)
+}
+
 func Path[T any](r *http.Request, key string, defaultValue T) T {
-	val := mux.PathVar(r, key)
-	return ValueOrDefault(val, defaultValue)
+	vals := PathVars(r)
+	if vals == nil {
+		return defaultValue
+	}
+	return ValueOrDefault(vals[key], defaultValue)
 }
 
 func Header[T any](r *http.Request, key string, defaultValue T) T {

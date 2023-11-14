@@ -236,7 +236,7 @@ func splitResourceAction(path string) (string, string) {
 func HTTPAuditorFilter(ctx context.Context, prefix string, opt *AuditOptions, sink AuditSink) api.Filter {
 	auditor := NewSimpleAuditor(prefix, opt)
 	sink = NewCachedAuditSink(ctx, sink, 0) // add a cache queue
-	return func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	return api.FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
 		ww, auditlog := auditor.OnRequest(w, r) // audit request
 		if auditlog == nil {                    // no audit log, skip
 			next.ServeHTTP(ww, r)
@@ -248,5 +248,5 @@ func HTTPAuditorFilter(ctx context.Context, prefix string, opt *AuditOptions, si
 		next.ServeHTTP(ww, r)               // process request and response
 		auditor.OnResponse(ww, r, auditlog) // audit response
 		_ = sink.Save(auditlog)             // save audit log
-	}
+	})
 }

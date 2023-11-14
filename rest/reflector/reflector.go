@@ -23,35 +23,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-openapi/spec"
-	"golang.org/x/exp/maps"
 	libreflect "kubegems.io/library/reflect"
-	"kubegems.io/library/rest/mux"
-	"kubegems.io/library/rest/openapi"
+	"kubegems.io/library/rest/api"
 	"kubegems.io/library/rest/request"
 	"kubegems.io/library/rest/response"
 	libstrings "kubegems.io/library/strings"
 )
-
-func Register(mux *mux.MethodServeMux, swagger *spec.Swagger, prefix string, parents []string, controller any) error {
-	handlers, err := RegisterController(prefix, parents, controller)
-	if err != nil {
-		return err
-	}
-	for _, h := range handlers {
-		mux.Handle(h.Method, h.Path, h.Handler)
-	}
-	if swagger.Paths == nil {
-		swagger.Paths = &spec.Paths{}
-	}
-	if swagger.Paths.Paths == nil {
-		swagger.Paths.Paths = map[string]spec.PathItem{}
-	}
-	maps.Copy(swagger.Paths.Paths, BuildOpenAPIRoute(handlers))
-	swagger.Definitions = make(spec.Definitions)
-	swagger.Definitions = openapi.DefaultBuilder.Definitions
-	return nil
-}
 
 func RegisterController(prefix string, parents []string, controller any) ([]ConvertedHandler, error) {
 	v := reflect.ValueOf(controller)
@@ -245,7 +222,7 @@ func parseArgs(method string, reflectMethod reflect.Method, pathvarnames []strin
 }
 
 func prepareCallArgs(r *http.Request, arg0 reflect.Value, args []Argv) ([]reflect.Value, error) {
-	pathvars, queries := mux.PathVars(r), r.URL.Query()
+	pathvars, queries := api.PathVars(r), r.URL.Query()
 	callargs := []reflect.Value{arg0}
 	for _, arg := range args {
 		switch arg.Loc {
