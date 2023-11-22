@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var PathVarsFunc = func(r *http.Request) map[string]string {
@@ -100,6 +101,9 @@ func ValueOrDefault[T any](val string, defaultValue T) T {
 	case int64:
 		intval, _ := strconv.ParseInt(val, 10, 64)
 		return any(intval).(T)
+	case time.Time:
+		t, _ := time.Parse(time.RFC3339, val)
+		return any(t).(T)
 	default:
 		return defaultValue
 	}
@@ -107,7 +111,6 @@ func ValueOrDefault[T any](val string, defaultValue T) T {
 
 func Body(r *http.Request, into any) error {
 	body := r.Body
-
 	// check if the request body needs decompression
 	switch contentEncoding := r.Header.Get("Content-Encoding"); contentEncoding {
 	case "gzip":
@@ -127,10 +130,15 @@ func Body(r *http.Request, into any) error {
 	mediatype, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	switch mediatype {
 	case "application/json", "":
-		return json.NewDecoder(body).Decode(into)
+		if err := json.NewDecoder(body).Decode(into); err != nil {
+			return err
+		}
 	case "application/xml":
-		return xml.NewDecoder(body).Decode(into)
+		if err := xml.NewDecoder(body).Decode(into); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unsupported media type: %s", mediatype)
 	}
+	return ValidateBody(r, into)
 }

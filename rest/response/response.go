@@ -15,6 +15,7 @@
 package response
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,14 +23,31 @@ import (
 	"net/http"
 )
 
-type Response struct {
-	Message string `json:"message,omitempty"` // user friendly message, it contains error message or success message
-	Data    any    `json:"data,omitempty"`    // data
-	Error   any    `json:"error,omitempty"`   // raw error for debug purpose only
+var ResponseDataCompress = func(w http.ResponseWriter) {
+	w.Header().Set("Content-Encoding", "gzip")
+	gzipWriter := gzip.NewWriter(w)
+	w = gzipResponseWriter{w: gzipWriter, ResponseWriter: w}
+}
+
+type gzipResponseWriter struct {
+	w io.Writer
+	http.ResponseWriter
+}
+
+func (g gzipResponseWriter) Write(b []byte) (int, error) {
+	return g.w.Write(b)
+}
+
+var WrapError = func(code int, msg string, err error) any {
+	return StatusError{Status: code, Message: msg, RawErr: err}
+}
+
+var WrapOK = func(data any) any {
+	return map[string]any{"data": data}
 }
 
 func OK(w http.ResponseWriter, data any) {
-	Raw(w, http.StatusOK, Response{Data: data}, nil)
+	Raw(w, http.StatusOK, WrapOK(data), nil)
 }
 
 func NotFound(w http.ResponseWriter, message string) {
@@ -57,9 +75,9 @@ var ServerError = InternalServerError
 func Error(w http.ResponseWriter, err error) {
 	statusError := &StatusError{}
 	if errors.As(err, &statusError) {
-		Raw(w, statusError.Status, Response{Message: statusError.Error(), Error: statusError.RawErr}, nil)
+		Raw(w, statusError.Status, WrapError(statusError.Status, statusError.Error(), statusError.RawErr), nil)
 	} else {
-		Raw(w, http.StatusBadRequest, Response{Message: err.Error(), Error: err}, nil)
+		Raw(w, http.StatusBadRequest, WrapError(http.StatusBadRequest, err.Error(), err), nil)
 	}
 }
 

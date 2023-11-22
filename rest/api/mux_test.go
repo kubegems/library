@@ -20,9 +20,10 @@ func Test_matcher_Match(t *testing.T) {
 	}{
 		{
 			registered: []string{
-				"/api/dog*",
+				"/front/*",
+				"/{org}/{repo}*",
 			},
-			req:     "/api/dog/dsa",
+			req:     "/front/@iconify-json/logos-c3b8b8cf.js",
 			matched: true,
 			vars:    []MatchVar{},
 		},

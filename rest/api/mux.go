@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 
+	"github.com/go-playground/validator/v10"
 	"golang.org/x/exp/maps"
 	"kubegems.io/library/rest/matcher"
 	"kubegems.io/library/rest/request"
@@ -189,6 +192,29 @@ func PathVars(r *http.Request) map[string]string {
 	return nil
 }
 
+func NewDefauBodyltValidation() func(r *http.Request, data any) error {
+	v := validator.New()
+	v.RegisterValidation("regxp", func(fl validator.FieldLevel) bool {
+		if fl.Field().Kind() != reflect.String {
+			return true
+		}
+		regxp := fl.Param()
+		if regxp == "" {
+			return true
+		}
+		if matched, err := regexp.MatchString(regxp, fl.Field().String()); err != nil {
+			return false
+		} else if matched {
+			return true
+		}
+		return false
+	})
+	return func(r *http.Request, data any) error {
+		return v.StructCtx(r.Context(), data)
+	}
+}
+
 func init() {
 	request.PathVarsFunc = PathVars
+	request.ValidateBody = NewDefauBodyltValidation()
 }

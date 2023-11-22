@@ -15,16 +15,17 @@
 package api
 
 import (
+	"compress/flate"
+	"compress/gzip"
 	"context"
+	"io"
 	"net/http"
-	"path"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-logr/logr"
 	"kubegems.io/library/rest/matcher"
-	"kubegems.io/library/rest/response"
 )
 
 type FilterHolder interface {
@@ -75,7 +76,14 @@ func (t *SimpleFilters) Register(pattern string, filters ...Filter) error {
 }
 
 func (t *SimpleFilters) Process(w http.ResponseWriter, r *http.Request, next http.Handler) {
-	node, _ := t.Node.Match(r.URL.Path, nil)
+	node, vars := t.Node.Match(r.URL.Path, nil)
+	if len(vars) > 0 {
+		varsmap := make(map[string]string, len(vars))
+		for _, v := range vars {
+			varsmap[v.Name] = v.Value
+		}
+		r = r.WithContext(context.WithValue(r.Context(), httpVarsContextKey{}, varsmap))
+	}
 	if node == nil {
 		next.ServeHTTP(w, r)
 		return
@@ -109,100 +117,94 @@ func CORSFilter() Filter {
 	})
 }
 
-func LoggingFilter(log logr.Logger) Filter {
+func NoopFilter() Filter {
 	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
-		start := time.Now()
-		ww := &StatusResponseWriter{ResponseWriter: w}
-		next.ServeHTTP(ww, r)
-		duration := time.Since(start)
-		log.Info(r.RequestURI,
-			"method", r.Method,
-			"remote", r.RemoteAddr,
-			"code", ww.StatusCode,
-			"duration", duration.String())
-	})
-}
-
-type StatusResponseWriter struct {
-	http.ResponseWriter
-	StatusCode int
-}
-
-func (w *StatusResponseWriter) WriteHeader(code int) {
-	w.StatusCode = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
-type OIDCClientOptions struct {
-	Issuer         string
-	Audience       string
-	NoAuthPatterns []string // white list pathes, match by path.Match
-}
-
-func OIDCFilter(ctx context.Context, opts *OIDCClientOptions) Filter {
-	// no oidc
-	if opts.Issuer == "" {
-		return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
-			next.ServeHTTP(w, r)
-		})
-	}
-	ctx = oidc.InsecureIssuerURLContext(ctx, opts.Issuer)
-	provider, err := oidc.NewProvider(ctx, opts.Issuer)
-	if err != nil {
-		panic(err)
-	}
-	verifier := provider.Verifier(&oidc.Config{
-		SkipClientIDCheck: opts.Audience == "",
-		SkipIssuerCheck:   true,
-	})
-	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
-		for _, pattern := range opts.NoAuthPatterns {
-			if match, _ := path.Match(pattern, r.URL.Path); match {
-				next.ServeHTTP(w, r)
-				return
-			}
-		}
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if token == "" {
-			queries := r.URL.Query()
-			for _, k := range []string{"token", "access_token"} {
-				if token = queries.Get(k); token != "" {
-					break
-				}
-			}
-		}
-		if len(token) == 0 {
-			response.Unauthorized(w, "missing access token")
-			return
-		}
-		idtoken, err := verifier.Verify(r.Context(), token)
-		if err != nil {
-			// ResponseError(w, apierr.NewUnauthorizedError("invalid access token"))
-			response.Unauthorized(w, "invalid access token")
-			return
-		}
-		r = r.WithContext(NewOIDCContext(r.Context(), OIDCInfo{
-			Username: idtoken.Subject,
-			Token:    token,
-		}))
 		next.ServeHTTP(w, r)
 	})
 }
 
-type contextOIDCKey struct{}
-
-type OIDCInfo struct {
-	Username string `json:"username,omitempty"`
-	Token    string `json:"token,omitempty"`
+func LoggingFilter(log logr.Logger) Filter {
+	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.Info(r.RequestURI, "method", r.Method, "remote", r.RemoteAddr, "duration", time.Since(start).String())
+	})
 }
 
-func NewOIDCContext(ctx context.Context, val OIDCInfo) context.Context {
-	return context.WithValue(ctx, contextOIDCKey{}, val)
-}
-
-func OIDCFromContext(ctx context.Context) OIDCInfo {
-	if val, ok := ctx.Value(contextOIDCKey{}).(OIDCInfo); ok {
-		return val
+// NewCompressionFilter returns a filter that compresses the response body
+func NewCompressionFilter() Filter {
+	gzipPool := &sync.Pool{
+		New: func() interface{} {
+			gw, err := gzip.NewWriterLevel(nil, gzip.BestSpeed)
+			if err != nil {
+				panic(err)
+			}
+			return gw
+		},
 	}
-	return OIDCInfo{}
+	flatePool := &sync.Pool{
+		New: func() interface{} {
+			fw, err := flate.NewWriter(nil, flate.BestSpeed)
+			if err != nil {
+				panic(err)
+			}
+			return fw
+		},
+	}
+	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		var wrappedWriter io.Writer
+		encoding := r.Header.Get("Accept-Encoding")
+		accept := ""
+		for len(encoding) > 0 {
+			var token string
+			if next := strings.Index(encoding, ","); next != -1 {
+				token = encoding[:next]
+				encoding = encoding[next+1:]
+			} else {
+				token = encoding
+				encoding = ""
+			}
+			if strings.TrimSpace(token) != "" {
+				accept = token
+				break
+			}
+		}
+		switch accept {
+		case "gzip":
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Add("Vary", "Accept-Encoding")
+
+			gw := gzipPool.Get().(*gzip.Writer)
+			gw.Reset(w)
+			defer gzipPool.Put(gw)
+
+			wrappedWriter = gw
+		case "deflate":
+			w.Header().Set("Content-Encoding", "deflate")
+			w.Header().Add("Vary", "Accept-Encoding")
+			fw := flatePool.Get().(*flate.Writer)
+			fw.Reset(w)
+			defer flatePool.Put(fw)
+
+			wrappedWriter = fw
+		}
+		if wrappedWriter != nil {
+			w = &CompresseWriter{ResponseWriter: w, w: wrappedWriter}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+type CompresseWriter struct {
+	http.ResponseWriter
+	w io.Writer
+}
+
+func (cw *CompresseWriter) Flush() {
+	if flusher, ok := cw.w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	if flusher, ok := cw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
