@@ -36,6 +36,13 @@ type AuditSink interface {
 }
 
 func NewAuditFilter(auditor Auditor, sink AuditSink) Filter {
+	return Filters{
+		NewAuditStartFilter(auditor),
+		NewAuditEndFilter(auditor, sink),
+	}
+}
+
+func NewAuditStartFilter(auditor Auditor) Filter {
 	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
 		ww, auditlog := auditor.OnRequest(w, r) // audit request
 		if auditlog == nil {                    // no audit log, skip
@@ -45,9 +52,21 @@ func NewAuditFilter(auditor Auditor, sink AuditSink) Filter {
 		if ww == nil {
 			ww = w
 		}
-		next.ServeHTTP(ww, r)               // process request and response
-		auditor.OnResponse(ww, r, auditlog) // audit response
-		_ = sink.Save(auditlog)             // save audit log
+		// save audit log to context
+		r = r.WithContext(WithAuditLog(r.Context(), auditlog))
+		next.ServeHTTP(ww, r) // process request
+	})
+}
+
+func NewAuditEndFilter(auditor Auditor, sink AuditSink) Filter {
+	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		next.ServeHTTP(w, r) // process request and response
+		auditlog := AuditLogFromContext(r.Context())
+		if auditlog == nil { // no audit log, skip
+			return
+		}
+		auditor.OnResponse(w, r, auditlog) // audit response
+		_ = sink.Save(auditlog)            // save audit log
 	})
 }
 

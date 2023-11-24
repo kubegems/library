@@ -23,6 +23,7 @@ type OIDCOptions struct {
 type UserInfo struct {
 	ID            string              `json:"id,omitempty"`
 	Name          string              `json:"name,omitempty"`
+	Email         string              `json:"email,omitempty"`
 	EmailVerified bool                `json:"email_verified,omitempty"`
 	Groups        []string            `json:"groups,omitempty"`
 	Extra         map[string][]string `json:"extra,omitempty"`
@@ -159,6 +160,7 @@ func (o *OIDCAuthenticator) Authenticate(ctx context.Context, token string) (*Au
 	}
 	// username
 	var username string
+	var email string
 	for _, candidate := range o.UsernameClaimCandidate {
 		if err := c.unmarshalClaim(candidate, &username); err != nil {
 			continue
@@ -176,6 +178,7 @@ func (o *OIDCAuthenticator) Authenticate(ctx context.Context, token string) (*Au
 					return nil, false, fmt.Errorf("oidc: email not verified")
 				}
 			}
+			email = username
 			username = o.EmailToUsername(username)
 		}
 		if username != "" {
@@ -198,6 +201,7 @@ func (o *OIDCAuthenticator) Authenticate(ctx context.Context, token string) (*Au
 	info := UserInfo{
 		ID:     idToken.Subject,
 		Name:   username,
+		Email:  email,
 		Groups: groups,
 	}
 	return &AuthenticateInfo{Audiences: idToken.Audience, User: info}, true, nil

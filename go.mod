@@ -9,15 +9,16 @@ require (
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-openapi/spec v0.20.9
 	github.com/go-playground/validator/v10 v10.16.0
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/jinzhu/inflection v1.0.0
 	github.com/opencontainers/distribution-spec/specs-go v0.0.0-20231117024018-3ec8a56d897b
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.17.0
 	go.uber.org/zap v1.26.0
 	golang.org/x/crypto v0.15.0
-	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
+	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
 	golang.org/x/net v0.18.0
-	k8s.io/apimachinery v0.27.4
+	k8s.io/apimachinery v0.28.4
 )
 
 require (
@@ -60,8 +61,8 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/klog/v2 v2.90.1 // indirect
-	k8s.io/utils v0.0.0-20230220204549-a5ecb0141aa5 // indirect
+	k8s.io/klog/v2 v2.110.1 // indirect
+	k8s.io/utils v0.0.0-20231121161247-cf03d44ff3cf // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )

@@ -17,6 +17,30 @@ type Attributes struct {
 	Path      string             `json:"path,omitempty"`
 }
 
+// return wildcards for action and expression
+// e.g. action: get, resources: [AttrbuteResource{Resource: "namespaces", Name: "default"}]
+// -> "get", "namespaces:default"
+func (a Attributes) ToWildcards() (string, string) {
+	wildcards := []string{}
+	for _, resource := range a.Resources {
+		if resource.Resource != "" {
+			wildcards = append(wildcards, resource.Resource)
+		} else {
+			wildcards = append(wildcards, "*")
+		}
+		if resource.Name != "" {
+			wildcards = append(wildcards, resource.Name)
+		} else {
+			wildcards = append(wildcards, "*")
+		}
+	}
+	action := a.Action
+	if action == "" {
+		action = "*"
+	}
+	return action, strings.Join(wildcards, ":")
+}
+
 type AttributeExtractor func(r *http.Request) (*Attributes, error)
 
 func PrefixedAttributesExtractor(prefix string) AttributeExtractor {
@@ -35,6 +59,7 @@ var MethodActionMapPlural = map[string]string{
 	"GET":    "list",
 	"POST":   "create",
 	"DELETE": "removeBatch",
+	"PUT":    "updateBatch",
 }
 
 // singular plural

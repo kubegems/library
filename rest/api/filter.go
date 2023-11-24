@@ -208,3 +208,13 @@ func (cw *CompresseWriter) Flush() {
 		flusher.Flush()
 	}
 }
+
+func NewConditionFilter(cond func(r *http.Request) bool, filter Filter) Filter {
+	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		if cond(r) {
+			filter.Process(w, r, next)
+		} else {
+			next.ServeHTTP(w, r)
+		}
+	})
+}
