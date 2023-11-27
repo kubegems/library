@@ -24,14 +24,13 @@ type Module interface {
 	Routes() []Group
 }
 
-type Function = http.HandlerFunc
-
 type Route struct {
 	Summary    string
 	Path       string
 	Method     string
 	Deprecated bool
-	Func       Function
+	Handler    http.Handler
+	Filters    Filters
 	Tags       []string
 	Consumes   []string
 	Produces   []string
@@ -41,9 +40,9 @@ type Route struct {
 }
 
 func (route Route) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fn := route.Func
+	fn := route.Handler
 	if len(route.Produces) != 0 || len(route.Consumes) != 0 {
-		fn = MediaTypeCheckFunc(route.Produces, route.Consumes, route.Func)
+		fn = MediaTypeCheckFunc(route.Produces, route.Consumes, route.Handler)
 	}
 	fn.ServeHTTP(w, r)
 }
@@ -91,8 +90,8 @@ func DELETE(path string) Route {
 	return Do(http.MethodDelete, path)
 }
 
-func (n Route) To(fun Function) Route {
-	n.Func = fun
+func (n Route) To(fun http.HandlerFunc) Route {
+	n.Handler = fun
 	return n
 }
 

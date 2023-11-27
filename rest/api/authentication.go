@@ -50,6 +50,10 @@ type TokenAuthenticator interface {
 	Authenticate(ctx context.Context, token string) (*AuthenticateInfo, bool, error)
 }
 
+type BasicAuthenticator interface {
+	Authenticate(ctx context.Context, username, password string) (*AuthenticateInfo, bool, error)
+}
+
 type SSHAuthenticator interface {
 	AuthenticatePublibcKey(ctx context.Context, pubkey ssh.PublicKey) (*AuthenticateInfo, bool, error)
 	AuthenticatePassword(ctx context.Context, username, password string) (*AuthenticateInfo, bool, error)
@@ -72,9 +76,36 @@ func (c AuthenticatorChain) Authenticate(ctx context.Context, token string) (*Au
 	return nil, false, nil
 }
 
+func NewBasicAuthenticationFilter(authenticator BasicAuthenticator, faildOnEmpty bool) Filter {
+	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		username, password, ok := r.BasicAuth()
+		if !ok && faildOnEmpty {
+			response.Unauthorized(w, "Unauthorized")
+			return
+		}
+		info, ok, err := authenticator.Authenticate(r.Context(), username, password)
+		if err != nil {
+			response.Unauthorized(w, fmt.Sprintf("Unauthorized: %v", err))
+			return
+		}
+		if ok {
+			ctx := WithAuthenticate(r.Context(), *info)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		response.Unauthorized(w, "Unauthorized")
+	})
+}
+
 func NewAuthenticationFilter(authenticator TokenAuthenticator) Filter {
 	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
 		token := ExtracTokenFromRequest(r)
+		if token == "" {
+			response.Unauthorized(w, "Unauthorized")
+			// https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/WWW-Authenticate
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			return
+		}
 		info, ok, err := authenticator.Authenticate(r.Context(), token)
 		if err != nil {
 			response.Unauthorized(w, fmt.Sprintf("Unauthorized: %v", err))
@@ -115,6 +146,7 @@ func AuthenticateFromContext(ctx context.Context) AuthenticateInfo {
 type OIDCAuthenticator struct {
 	Verifier               *oidc.IDTokenVerifier
 	UsernameClaimCandidate []string
+	EmailClaimCandidate    []string
 	GroupsClaimCandidate   []string
 	EmailToUsername        func(email string) string
 }
@@ -137,7 +169,8 @@ func NewOIDCAuthenticator(ctx context.Context, opts *OIDCOptions) (*OIDCAuthenti
 	})
 	return &OIDCAuthenticator{
 		Verifier:               verifier,
-		UsernameClaimCandidate: []string{"email", "preferred_username", "name"},
+		UsernameClaimCandidate: []string{"preferred_username", "name", "email"},
+		EmailClaimCandidate:    []string{"email"},
 		GroupsClaimCandidate:   []string{"groups", "roles"},
 		EmailToUsername: func(email string) string {
 			return strings.Split(email, "@")[0]
@@ -160,33 +193,43 @@ func (o *OIDCAuthenticator) Authenticate(ctx context.Context, token string) (*Au
 	}
 	// username
 	var username string
-	var email string
 	for _, candidate := range o.UsernameClaimCandidate {
 		if err := c.unmarshalClaim(candidate, &username); err != nil {
 			continue
-		}
-		// If the email_verified claim is present, ensure the email is valid.
-		// https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
-		if candidate == "email" {
-			if hasEmailVerified := c.hasClaim("email_verified"); hasEmailVerified {
-				var emailVerified bool
-				if err := c.unmarshalClaim("email_verified", &emailVerified); err != nil {
-					return nil, false, fmt.Errorf("oidc: parse 'email_verified' claim: %v", err)
-				}
-				// If the email_verified claim is present we have to verify it is set to `true`.
-				if !emailVerified {
-					return nil, false, fmt.Errorf("oidc: email not verified")
-				}
-			}
-			email = username
-			username = o.EmailToUsername(username)
 		}
 		if username != "" {
 			break
 		}
 	}
+	// email
+	var email string
+	for _, candidate := range o.EmailClaimCandidate {
+		if err := c.unmarshalClaim(candidate, &email); err != nil {
+			continue
+		}
+		// If the email_verified claim is present, ensure the email is valid.
+		// https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
+		if hasEmailVerified := c.hasClaim("email_verified"); hasEmailVerified {
+			var emailVerified bool
+			if err := c.unmarshalClaim("email_verified", &emailVerified); err != nil {
+				return nil, false, fmt.Errorf("oidc: parse 'email_verified' claim: %v", err)
+			}
+			// If the email_verified claim is present we have to verify it is set to `true`.
+			if !emailVerified {
+				return nil, false, fmt.Errorf("oidc: email not verified")
+			}
+		}
+		if email != "" {
+			break
+		}
+	}
+	// if no username, use email as username
 	if username == "" {
-		return nil, false, fmt.Errorf("oidc: no username claim found")
+		if email != "" {
+			username = o.EmailToUsername(email)
+		} else {
+			return nil, false, fmt.Errorf("oidc: no username/email claim found")
+		}
 	}
 	// groups
 	var groups stringOrArray

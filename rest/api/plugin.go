@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 	"kubegems.io/library/rest/response"
 )
 
@@ -48,5 +50,18 @@ func (h HealthCheckPlugin) Install(m *API) error {
 		}
 		response.Raw(resp, http.StatusOK, "ok", nil)
 	}))
+	return nil
+}
+
+type OpenTelemetryPlugin struct {
+	TraceProvider trace.TracerProvider
+}
+
+func (o OpenTelemetryPlugin) Install(m *API) error {
+	return nil
+}
+
+func (o OpenTelemetryPlugin) OnRoute(route *Route) error {
+	route.Handler = otelhttp.WithRouteTag(route.Path, route.Handler)
 	return nil
 }
