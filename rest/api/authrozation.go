@@ -11,7 +11,13 @@ import (
 )
 
 type RequestAuthorizer interface {
-	AuthorizeRequest(ctx context.Context, r *http.Request) (Decision, string, error)
+	AuthorizeRequest(r *http.Request) (Decision, string, error)
+}
+
+type RequestAuthorizerFunc func(r *http.Request) (Decision, string, error)
+
+func (f RequestAuthorizerFunc) AuthorizeRequest(r *http.Request) (Decision, string, error) {
+	return f(r)
 }
 
 type Authorizer interface {
@@ -67,9 +73,20 @@ func AuthorizationContextFromContext(ctx context.Context) (Decision, bool) {
 	return decision, ok
 }
 
-func NewRequestAuthorizationFilter(authorizer RequestAuthorizer) Filter {
+func NewRequestAuthorizationFilter(on RequestAuthorizerFunc) Filter {
 	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
-		decision, reason, err := authorizer.AuthorizeRequest(r.Context(), r)
+		// already authorized by previous filter
+		if decision, ok := AuthorizationContextFromContext(r.Context()); ok {
+			if decision == DecisionAllow {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if decision == DecisionDeny {
+				response.Forbidden(w, "access denied")
+				return
+			}
+		}
+		decision, reason, err := on(r)
 		if err != nil {
 			response.InternalServerError(w, err)
 			return
@@ -89,14 +106,8 @@ func NewRequestAuthorizationFilter(authorizer RequestAuthorizer) Filter {
 	})
 }
 
-type RequestAuthorizerFunc func(ctx context.Context, r *http.Request) (Decision, string, error)
-
-func (f RequestAuthorizerFunc) AuthorizeRequest(ctx context.Context, r *http.Request) (Decision, string, error) {
-	return f(ctx, r)
-}
-
 func NewAllowCIDRAuthorizer(cidrs []string, defaultDec Decision) RequestAuthorizer {
-	return RequestAuthorizerFunc(func(ctx context.Context, r *http.Request) (Decision, string, error) {
+	return RequestAuthorizerFunc(func(r *http.Request) (Decision, string, error) {
 		if RequestSourceIPInCIDR(cidrs, r) {
 			return DecisionAllow, "", nil
 		}
@@ -127,35 +138,13 @@ func InCIDR(ip string, cidrs []string) bool {
 }
 
 func NewAuthorizationFilter(authorizer Authorizer) Filter {
-	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
-		// already authorized by previous filter
-		if decision, ok := AuthorizationContextFromContext(r.Context()); ok {
-			if decision == DecisionAllow {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if decision == DecisionDeny {
-				response.Forbidden(w, "access denied")
-				return
-			}
-		}
+	return NewRequestAuthorizationFilter(func(r *http.Request) (Decision, string, error) {
 		attributes := AttributesFromContext(r.Context())
+		if attributes == nil {
+			return DecisionDeny, "no attributes", nil
+		}
 		user := AuthenticateFromContext(r.Context()).User
-		decision, reason, err := authorizer.Authorize(r.Context(), user, *attributes)
-		if err != nil {
-			response.InternalServerError(w, err)
-			return
-		}
-		if decision == DecisionAllow {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if decision == DecisionDeny {
-			response.Forbidden(w, reason)
-			return
-		}
-		// DecisionNoOpinion
-		response.Forbidden(w, "access denied")
+		return authorizer.Authorize(r.Context(), user, *attributes)
 	})
 }
 

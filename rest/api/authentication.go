@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/crypto/ssh"
@@ -47,76 +48,62 @@ const (
 )
 
 type TokenAuthenticator interface {
-	Authenticate(ctx context.Context, token string) (*AuthenticateInfo, bool, error)
+	// Authenticate authenticates the token and returns the authentication info.
+	// if can't authenticate, return nil, "reason message", nil
+	// if unexpected error, return nil, "", err
+	Authenticate(ctx context.Context, token string) (*AuthenticateInfo, error)
 }
 
-type BasicAuthenticator interface {
-	Authenticate(ctx context.Context, username, password string) (*AuthenticateInfo, bool, error)
+type UsernamePasswordAuthenticator interface {
+	Authenticate(ctx context.Context, username, password string) (*AuthenticateInfo, error)
+}
+
+type HTTPAuthenticator interface {
+	Authenticate(ctx context.Context, r *http.Request) (*AuthenticateInfo, error)
 }
 
 type SSHAuthenticator interface {
-	AuthenticatePublibcKey(ctx context.Context, pubkey ssh.PublicKey) (*AuthenticateInfo, bool, error)
-	AuthenticatePassword(ctx context.Context, username, password string) (*AuthenticateInfo, bool, error)
+	UsernamePasswordAuthenticator
+	AuthenticatePublibcKey(ctx context.Context, pubkey ssh.PublicKey) (*AuthenticateInfo, error)
 }
 
-type AuthenticatorChain []TokenAuthenticator
-
-var _ TokenAuthenticator = AuthenticatorChain{}
-
-func (c AuthenticatorChain) Authenticate(ctx context.Context, token string) (*AuthenticateInfo, bool, error) {
-	for _, authn := range c {
-		info, ok, err := authn.Authenticate(ctx, token)
-		if err != nil {
-			return nil, false, err
-		}
-		if ok {
-			return info, true, nil
-		}
-	}
-	return nil, false, nil
-}
-
-func NewBasicAuthenticationFilter(authenticator BasicAuthenticator, faildOnEmpty bool) Filter {
-	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+func NewBasicAuthenticationFilter(authenticator UsernamePasswordAuthenticator) Filter {
+	return NewAuthenticateFilter(func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error) {
 		username, password, ok := r.BasicAuth()
-		if !ok && faildOnEmpty {
-			response.Unauthorized(w, "Unauthorized")
-			return
+		if !ok {
+			return nil, fmt.Errorf("no basic auth")
 		}
-		info, ok, err := authenticator.Authenticate(r.Context(), username, password)
-		if err != nil {
-			response.Unauthorized(w, fmt.Sprintf("Unauthorized: %v", err))
-			return
-		}
-		if ok {
-			ctx := WithAuthenticate(r.Context(), *info)
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
-		}
-		response.Unauthorized(w, "Unauthorized")
+		return authenticator.Authenticate(r.Context(), username, password)
 	})
 }
 
-func NewAuthenticationFilter(authenticator TokenAuthenticator) Filter {
-	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+func NewTokenAuthenticationFilter(authenticator TokenAuthenticator) Filter {
+	return NewAuthenticateFilter(func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error) {
 		token := ExtracTokenFromRequest(r)
 		if token == "" {
-			response.Unauthorized(w, "Unauthorized")
 			// https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/WWW-Authenticate
 			w.Header().Set("WWW-Authenticate", "Bearer")
-			return
+			return nil, fmt.Errorf("no token found")
 		}
-		info, ok, err := authenticator.Authenticate(r.Context(), token)
+		return authenticator.Authenticate(r.Context(), token)
+	})
+}
+
+func NewHTTPAuthenticationFilter(authenticator HTTPAuthenticator) Filter {
+	return NewAuthenticateFilter(func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error) {
+		return authenticator.Authenticate(r.Context(), r)
+	})
+}
+
+func NewAuthenticateFilter(on func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error)) Filter {
+	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		info, err := on(w, r)
 		if err != nil {
 			response.Unauthorized(w, fmt.Sprintf("Unauthorized: %v", err))
 			return
 		}
-		if ok {
-			ctx := WithAuthenticate(r.Context(), *info)
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
-		}
-		response.Unauthorized(w, "Unauthorized")
+		ctx := WithAuthenticate(r.Context(), *info)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -141,6 +128,23 @@ func AuthenticateFromContext(ctx context.Context) AuthenticateInfo {
 		return info
 	}
 	return AuthenticateInfo{}
+}
+
+type AuthenticatorChain []TokenAuthenticator
+
+var _ TokenAuthenticator = AuthenticatorChain{}
+
+func (c AuthenticatorChain) Authenticate(ctx context.Context, token string) (*AuthenticateInfo, error) {
+	var lasterr error
+	for _, authn := range c {
+		info, err := authn.Authenticate(ctx, token)
+		if err != nil {
+			lasterr = err
+			continue
+		}
+		return info, nil
+	}
+	return nil, lasterr
 }
 
 type OIDCAuthenticator struct {
@@ -178,18 +182,18 @@ func NewOIDCAuthenticator(ctx context.Context, opts *OIDCOptions) (*OIDCAuthenti
 	}, nil
 }
 
-func (o *OIDCAuthenticator) Authenticate(ctx context.Context, token string) (*AuthenticateInfo, bool, error) {
+func (o *OIDCAuthenticator) Authenticate(ctx context.Context, token string) (*AuthenticateInfo, error) {
 	if token == "" {
-		return nil, false, nil
+		return nil, fmt.Errorf("no token found")
 	}
 	token = strings.TrimPrefix(token, "Bearer ")
 	idToken, err := o.Verifier.Verify(ctx, token)
 	if err != nil {
-		return nil, false, fmt.Errorf("oidc: verify token: %v", err)
+		return nil, fmt.Errorf("oidc: verify token: %v", err)
 	}
 	var c claims
 	if err := idToken.Claims(&c); err != nil {
-		return nil, false, fmt.Errorf("oidc: parse claims: %v", err)
+		return nil, fmt.Errorf("oidc: parse claims: %v", err)
 	}
 	// username
 	var username string
@@ -212,11 +216,11 @@ func (o *OIDCAuthenticator) Authenticate(ctx context.Context, token string) (*Au
 		if hasEmailVerified := c.hasClaim("email_verified"); hasEmailVerified {
 			var emailVerified bool
 			if err := c.unmarshalClaim("email_verified", &emailVerified); err != nil {
-				return nil, false, fmt.Errorf("oidc: parse 'email_verified' claim: %v", err)
+				return nil, fmt.Errorf("oidc: parse 'email_verified' claim: %v", err)
 			}
 			// If the email_verified claim is present we have to verify it is set to `true`.
 			if !emailVerified {
-				return nil, false, fmt.Errorf("oidc: email not verified")
+				return nil, fmt.Errorf("oidc: email not verified")
 			}
 		}
 		if email != "" {
@@ -228,7 +232,7 @@ func (o *OIDCAuthenticator) Authenticate(ctx context.Context, token string) (*Au
 		if email != "" {
 			username = o.EmailToUsername(email)
 		} else {
-			return nil, false, fmt.Errorf("oidc: no username/email claim found")
+			return nil, fmt.Errorf("oidc: no username/email claim found")
 		}
 	}
 	// groups
@@ -236,7 +240,7 @@ func (o *OIDCAuthenticator) Authenticate(ctx context.Context, token string) (*Au
 	for _, candidate := range o.GroupsClaimCandidate {
 		if c.hasClaim(candidate) {
 			if err := c.unmarshalClaim(candidate, &groups); err != nil {
-				return nil, false, fmt.Errorf("oidc: parse groups claim %q: %v", candidate, err)
+				return nil, fmt.Errorf("oidc: parse groups claim %q: %v", candidate, err)
 			}
 			break
 		}
@@ -247,7 +251,7 @@ func (o *OIDCAuthenticator) Authenticate(ctx context.Context, token string) (*Au
 		Email:  email,
 		Groups: groups,
 	}
-	return &AuthenticateInfo{Audiences: idToken.Audience, User: info}, true, nil
+	return &AuthenticateInfo{Audiences: idToken.Audience, User: info}, nil
 }
 
 type claims map[string]json.RawMessage
@@ -291,6 +295,53 @@ type AnonymousAuthenticator struct{}
 
 var _ TokenAuthenticator = &AnonymousAuthenticator{}
 
-func (a *AnonymousAuthenticator) Authenticate(ctx context.Context, token string) (*AuthenticateInfo, bool, error) {
-	return &AuthenticateInfo{User: UserInfo{Name: AnonymousUser, Groups: []string{}}}, true, nil
+func (a *AnonymousAuthenticator) Authenticate(ctx context.Context, token string) (*AuthenticateInfo, error) {
+	return &AuthenticateInfo{User: UserInfo{Name: AnonymousUser, Groups: []string{}}}, nil
+}
+
+var _ TokenAuthenticator = &LRUCacheAuthenticator{}
+
+func NewCacheAuthenticator(authenticator TokenAuthenticator, size int, ttl time.Duration) *LRUCacheAuthenticator {
+	return &LRUCacheAuthenticator{
+		Authenticator: authenticator,
+		Cache:         NewLRUCache[*AuthenticateInfo](size, ttl),
+	}
+}
+
+type LRUCacheAuthenticator struct {
+	Authenticator TokenAuthenticator
+	Cache         LRUCache[*AuthenticateInfo]
+}
+
+// Authenticate implements TokenAuthenticator.
+func (a *LRUCacheAuthenticator) Authenticate(ctx context.Context, token string) (*AuthenticateInfo, error) {
+	return a.Cache.GetOrAdd(token, func() (*AuthenticateInfo, error) {
+		return a.Authenticator.Authenticate(ctx, token)
+	})
+}
+
+func NewCachedSSHAuthenticator(authenticator SSHAuthenticator, size int, ttl time.Duration) *LRUCacheSSHAuthenticator {
+	return &LRUCacheSSHAuthenticator{Authenticator: authenticator, Cache: NewLRUCache[*AuthenticateInfo](size, ttl)}
+}
+
+var _ SSHAuthenticator = &LRUCacheSSHAuthenticator{}
+
+type LRUCacheSSHAuthenticator struct {
+	Authenticator SSHAuthenticator
+	Cache         LRUCache[*AuthenticateInfo]
+}
+
+// AuthenticatePublibcKey implements SSHAuthenticator.
+func (a *LRUCacheSSHAuthenticator) AuthenticatePublibcKey(ctx context.Context, pubkey ssh.PublicKey) (*AuthenticateInfo, error) {
+	return a.Cache.GetOrAdd(ssh.FingerprintSHA256(pubkey), func() (*AuthenticateInfo, error) {
+		return a.Authenticator.AuthenticatePublibcKey(ctx, pubkey)
+	},
+	)
+}
+
+// AuthenticatePassword implements SSHAuthenticator.
+func (a *LRUCacheSSHAuthenticator) Authenticate(ctx context.Context, username, password string) (*AuthenticateInfo, error) {
+	return a.Cache.GetOrAdd(fmt.Sprintf("%s:%s", username, password), func() (*AuthenticateInfo, error) {
+		return a.Authenticator.Authenticate(ctx, username, password)
+	})
 }
