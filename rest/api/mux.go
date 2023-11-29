@@ -97,7 +97,7 @@ func (h MethodsHandler) handler(r *http.Request) http.Handler {
 
 type Mux struct {
 	NotFound http.Handler
-	Handlers matcher.Node[MethodsHandler]
+	Tree     matcher.Node[MethodsHandler]
 }
 
 func NewMux() *Mux {
@@ -105,7 +105,7 @@ func NewMux() *Mux {
 }
 
 func (m *Mux) Handle(method, pattern string, handler http.Handler) error {
-	_, node, err := m.Handlers.Get(pattern)
+	_, node, err := m.Tree.Get(pattern)
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func (m *Mux) SetNotFound(handler http.Handler) {
 
 func (m *Mux) HandleRoute(route *Route) error {
 	method, pattern := route.Method, route.Path
-	sections, node, err := m.Handlers.Get(pattern)
+	sections, node, err := m.Tree.Get(pattern)
 	if err != nil {
 		return err
 	}
@@ -136,7 +136,12 @@ func (m *Mux) HandleRoute(route *Route) error {
 		return fmt.Errorf("already registered: %s %s", method, pattern)
 	}
 	node.Value[method] = route
-	// complete pathvars
+	// complete pathparam from sections if not exists
+	completePathParam(route, sections)
+	return nil
+}
+
+func completePathParam(route *Route, sections []matcher.Section) {
 	vars := []Param{}
 	for _, section := range sections {
 		for _, elem := range section {
@@ -162,11 +167,10 @@ func (m *Mux) HandleRoute(route *Route) error {
 	}
 	route.Params = append(vars, route.Params...)
 	route.Path = matcher.NoRegexpString(sections)
-	return nil
 }
 
 func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	node, vars := m.Handlers.Match(r.URL.Path, nil)
+	node, vars := m.Tree.Match(r.URL.Path, nil)
 	if node == nil || node.Value == nil {
 		if m.NotFound == nil {
 			http.NotFound(w, r)

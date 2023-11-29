@@ -23,7 +23,6 @@ import (
 
 type API struct {
 	tls     tlsfiles
-	filter  FilterHolder
 	plugins []Plugin
 	mux     Router
 }
@@ -35,18 +34,8 @@ type tlsfiles struct {
 
 func NewAPI() *API {
 	return &API{
-		mux:    NewMux(),
-		filter: NewFilters(),
+		mux: NewMux(),
 	}
-}
-
-type Predicate func(r *http.Request) bool
-
-func (m *API) Filter(pattern string, filters ...Filter) *API {
-	if err := m.filter.Register(pattern, filters...); err != nil {
-		panic(err)
-	}
-	return m
 }
 
 func (m *API) Route(route Route) *API {
@@ -66,13 +55,20 @@ func (m *API) NotFound(handler http.Handler) *API {
 	return m
 }
 
-func (m *API) Register(prefix string, modules ...Module) *API {
-	rg := NewGroup(prefix)
-	for _, module := range modules {
-		rg = rg.SubGroup(module.Routes()...)
+func (m *API) Group(groups ...Group) *API {
+	for _, group := range groups {
+		for _, routes := range group.Build() {
+			for _, route := range routes {
+				m.Route(route)
+			}
+		}
 	}
-	for _, methods := range rg.Build() {
-		for _, route := range methods {
+	return m
+}
+
+func (m *API) PrefixGroup(prefix string, groups ...Group) *API {
+	for _, path := range NewGroup(prefix).SubGroup(groups...).Build() {
+		for _, route := range path {
 			m.Route(route)
 		}
 	}
@@ -80,9 +76,7 @@ func (m *API) Register(prefix string, modules ...Module) *API {
 }
 
 func (m *API) Build() http.Handler {
-	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-		m.filter.Process(resp, req, m.mux)
-	})
+	return m.mux
 }
 
 func (m *API) TLS(cert, key string) *API {

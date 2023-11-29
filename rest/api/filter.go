@@ -17,7 +17,6 @@ package api
 import (
 	"compress/flate"
 	"compress/gzip"
-	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -25,13 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"kubegems.io/library/rest/matcher"
 )
-
-type FilterHolder interface {
-	Filter
-	Register(pattern string, filters ...Filter) error
-}
 
 type Filter interface {
 	Process(w http.ResponseWriter, r *http.Request, next http.Handler)
@@ -54,41 +47,6 @@ func (f PredicatedFilter) Process(w http.ResponseWriter, r *http.Request, next h
 	} else {
 		f.Filter.Process(w, r, next)
 	}
-}
-
-type SimpleFilters struct {
-	Node matcher.Node[Filters]
-}
-
-var _ FilterHolder = (*SimpleFilters)(nil)
-
-func NewFilters() *SimpleFilters {
-	return &SimpleFilters{}
-}
-
-func (t *SimpleFilters) Register(pattern string, filters ...Filter) error {
-	_, node, err := t.Node.Get(pattern)
-	if err != nil {
-		return err
-	}
-	node.Value = append(node.Value, filters...)
-	return nil
-}
-
-func (t *SimpleFilters) Process(w http.ResponseWriter, r *http.Request, next http.Handler) {
-	node, vars := t.Node.Match(r.URL.Path, nil)
-	if len(vars) > 0 {
-		varsmap := make(map[string]string, len(vars))
-		for _, v := range vars {
-			varsmap[v.Name] = v.Value
-		}
-		r = r.WithContext(context.WithValue(r.Context(), httpVarsContextKey{}, varsmap))
-	}
-	if node == nil {
-		next.ServeHTTP(w, r)
-		return
-	}
-	node.Value.Process(w, r, next)
 }
 
 type Filters []Filter

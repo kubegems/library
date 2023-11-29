@@ -132,9 +132,7 @@ func NewAttributeFilter(attributer AttributeExtractor) Filter {
 	})
 }
 
-type attributesContext struct{}
-
-var attributesContextKey = &attributesContext{}
+var attributesContextKey = ContextKey("attributes")
 
 func WithAttributes(ctx context.Context, attributes *Attributes) context.Context {
 	return context.WithValue(ctx, attributesContextKey, attributes)

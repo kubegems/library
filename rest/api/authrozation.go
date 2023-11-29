@@ -10,6 +10,16 @@ import (
 	"kubegems.io/library/rest/response"
 )
 
+type Decision int
+
+const (
+	DecisionDeny Decision = iota
+	DecisionAllow
+	DecisionNoOpinion
+)
+
+var DecisionDenyStatusNotFoundMessage = "not found"
+
 type RequestAuthorizer interface {
 	AuthorizeRequest(r *http.Request) (Decision, string, error)
 }
@@ -60,9 +70,9 @@ func (c AuthorizerChain) Authorize(ctx context.Context, user UserInfo, a Attribu
 	return DecisionDeny, "no decision", nil
 }
 
-type authorizationContext struct{}
+type ContextKey string
 
-var authorizationContextKey = &authorizationContext{}
+var authorizationContextKey = ContextKey("authorization")
 
 func WithAuthorizationContext(ctx context.Context, decision Decision) context.Context {
 	return context.WithValue(ctx, authorizationContextKey, decision)
@@ -88,7 +98,8 @@ func NewRequestAuthorizationFilter(on RequestAuthorizerFunc) Filter {
 		}
 		decision, reason, err := on(r)
 		if err != nil {
-			response.InternalServerError(w, err)
+			// allow custom response code
+			response.Error(w, err)
 			return
 		}
 		if decision == DecisionAllow {
@@ -98,7 +109,11 @@ func NewRequestAuthorizationFilter(on RequestAuthorizerFunc) Filter {
 			return
 		}
 		if decision == DecisionDeny {
-			response.Forbidden(w, reason)
+			if reason == DecisionDenyStatusNotFoundMessage {
+				response.NotFound(w, reason)
+			} else {
+				response.Forbidden(w, reason)
+			}
 			return
 		}
 		// DecisionNoOpinion
@@ -148,7 +163,7 @@ func NewAuthorizationFilter(authorizer Authorizer) Filter {
 	})
 }
 
-func NewCacheAuthorizer(authorizer Authorizer, ttl time.Duration, size int) Authorizer {
+func NewCacheAuthorizer(authorizer Authorizer, size int, ttl time.Duration) Authorizer {
 	return &LRUCacheAuthorizer{
 		Authorizer: authorizer,
 		cache:      expirable.NewLRU[string, Decision](size, nil, ttl),

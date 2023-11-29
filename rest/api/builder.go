@@ -20,10 +20,6 @@ import (
 	"strings"
 )
 
-type Module interface {
-	Routes() []Group
-}
-
 type Route struct {
 	Summary    string
 	Path       string
@@ -44,7 +40,7 @@ func (route Route) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(route.Produces) != 0 || len(route.Consumes) != 0 {
 		fn = MediaTypeCheckFunc(route.Produces, route.Consumes, route.Handler)
 	}
-	fn.ServeHTTP(w, r)
+	route.Filters.Process(w, r, fn)
 }
 
 type ResponseInfo struct {
@@ -204,7 +200,8 @@ func (p Param) Def(def string) Param {
 }
 
 type Group struct {
-	path      string
+	Path      string
+	Filters   Filters
 	Tags      []string
 	Params    []Param // common params apply to all routes in the group
 	Routes    []Route
@@ -214,7 +211,7 @@ type Group struct {
 }
 
 func NewGroup(path string) Group {
-	return Group{path: path}
+	return Group{Path: path}
 }
 
 func (g Group) Tag(name string) Group {
@@ -249,29 +246,36 @@ func (g Group) Param(params ...Param) Group {
 	return g
 }
 
+func (g Group) Filter(filters ...Filter) Group {
+	g.Filters = append(g.Filters, filters...)
+	return g
+}
+
 func (t Group) Build() map[string]map[string]Route {
-	// method -> path -> route
+	// path -> method -> route
 	items := map[string]map[string]Route{}
 	buildRoutes(items, Group{}, t)
 	return items
 }
 
 func buildRoutes(items map[string]map[string]Route, merged Group, group Group) {
-	if merged.path == "" {
-		merged.path = "/"
+	if merged.Path == "" {
+		merged.Path = "/"
 	}
-	merged.path = path.Join(merged.path, group.path)
+	merged.Path = path.Join(merged.Path, group.Path)
 	merged.Params = append(merged.Params, group.Params...)
 	merged.Tags = append(merged.Tags, group.Tags...)
 	merged.Consumes = append(merged.Consumes, group.Consumes...)
 	merged.Produces = append(merged.Produces, group.Produces...)
+	merged.Filters = append(merged.Filters, group.Filters...)
 
 	for _, route := range group.Routes {
 		route.Tags = append(merged.Tags, route.Tags...)
 		route.Params = append(merged.Params, route.Params...)
-		route.Path = merged.path + route.Path
+		route.Path = merged.Path + route.Path
 		route.Consumes = append(group.Consumes, route.Consumes...)
 		route.Produces = append(group.Produces, route.Produces...)
+		route.Filters = append(merged.Filters, route.Filters...)
 		pathmethods, ok := items[route.Path]
 		if !ok {
 			pathmethods = map[string]Route{}

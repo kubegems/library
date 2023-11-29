@@ -159,7 +159,7 @@ func Test_matcher_Match(t *testing.T) {
 					t.Error(err)
 				}
 			}
-			node, vars := m.Handlers.Match(tt.req, nil)
+			node, vars := m.Tree.Match(tt.req, nil)
 			matched := (node != nil && node.Value != nil)
 			if matched != tt.matched {
 				t.Errorf("matcher.Match() matched = %v, want %v", matched, tt.matched)

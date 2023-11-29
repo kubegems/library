@@ -36,10 +36,21 @@ type AuditSink interface {
 }
 
 func NewAuditFilter(auditor Auditor, sink AuditSink) Filter {
-	return Filters{
-		NewAuditStartFilter(auditor),
-		NewAuditEndFilter(auditor, sink),
-	}
+	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		ww, auditlog := auditor.OnRequest(w, r)
+		if auditlog == nil {
+			next.ServeHTTP(ww, r)
+			return
+		}
+		if ww == nil {
+			ww = w
+		}
+		// save audit log to context
+		r = r.WithContext(WithAuditLog(r.Context(), auditlog))
+		next.ServeHTTP(ww, r)
+		auditor.OnResponse(ww, r, auditlog)
+		_ = sink.Save(auditlog)
+	})
 }
 
 func NewAuditStartFilter(auditor Auditor) Filter {
@@ -214,9 +225,7 @@ type AuditLog struct {
 	Metadata  AuditExtraMetadata `json:"metadata,omitempty"`  // extra metadata
 }
 
-type auditmetadaContext struct{}
-
-var auditmetadaContextKey = auditmetadaContext{}
+var auditmetadaContextKey = ContextKey("audit-metadata")
 
 func WithAuditLog(ctx context.Context, log *AuditLog) context.Context {
 	return context.WithValue(ctx, auditmetadaContextKey, log)

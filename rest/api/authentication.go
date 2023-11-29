@@ -39,13 +39,6 @@ type AuthenticateInfo struct {
 	User UserInfo
 }
 
-type Decision int
-
-const (
-	DecisionDeny Decision = iota
-	DecisionAllow
-	DecisionNoOpinion
-)
 
 type TokenAuthenticator interface {
 	// Authenticate authenticates the token and returns the authentication info.
@@ -115,9 +108,7 @@ func ExtracTokenFromRequest(r *http.Request) string {
 	return token
 }
 
-type authenticateContext struct{}
-
-var authenticateContextKey = &authenticateContext{}
+var authenticateContextKey = ContextKey("authenticate")
 
 func WithAuthenticate(ctx context.Context, info AuthenticateInfo) context.Context {
 	return context.WithValue(ctx, authenticateContextKey, info)
