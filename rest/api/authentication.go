@@ -17,8 +17,13 @@ const AnonymousUser = "anonymous" // anonymous username
 
 type OIDCOptions struct {
 	Issuer   string `json:"issuer" description:"oidc issuer url"`
-	Insecure bool   `json:"insecure" description:"skip issuer and audience verification (optional)"`
-	Audience string `json:"audience" description:"oidc resource server audience (optional)"`
+	Insecure bool   `json:"insecure" description:"skip issuer and audience verification"`
+	// ClientID is the OAuth2 client ID for this server.
+	ClientID string `json:"clientID" description:"oidc client id"`
+	// ClientSecret is the secret for the client ID. If no secret is provided,
+	// the client is assumed to be a public client and authentication will
+	// proceed without a client secret.
+	ClientSecret string `json:"clientSecret" description:"oidc client secret"`
 }
 
 type UserInfo struct {
@@ -38,7 +43,6 @@ type AuthenticateInfo struct {
 	// User is the UserInfo associated with the authentication context.
 	User UserInfo
 }
-
 
 type TokenAuthenticator interface {
 	// Authenticate authenticates the token and returns the authentication info.
@@ -159,7 +163,7 @@ func NewOIDCAuthenticator(ctx context.Context, opts *OIDCOptions) (*OIDCAuthenti
 		return nil, fmt.Errorf("init oidc provider: %v", err)
 	}
 	verifier := provider.Verifier(&oidc.Config{
-		SkipClientIDCheck: opts.Audience == "",
+		SkipClientIDCheck: opts.ClientID == "",
 		SkipIssuerCheck:   true,
 	})
 	return &OIDCAuthenticator{
