@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
-	"slices"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 	"kubegems.io/library/rest/matcher"
 	"kubegems.io/library/rest/request"
 )

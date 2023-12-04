@@ -19,11 +19,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/exp/slices"
 )
 
 type Auditor interface {

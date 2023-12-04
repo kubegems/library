@@ -3,8 +3,9 @@ package matcher
 import (
 	"fmt"
 	"regexp"
-	"slices"
 	"strings"
+
+	"golang.org/x/exp/slices"
 )
 
 func ParseToken(path string) []string {
