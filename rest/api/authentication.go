@@ -77,11 +77,6 @@ func NewBasicAuthenticationFilter(authenticator UsernamePasswordAuthenticator) F
 func NewTokenAuthenticationFilter(authenticator TokenAuthenticator) Filter {
 	return NewAuthenticateFilter(func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error) {
 		token := ExtracTokenFromRequest(r)
-		if token == "" {
-			// https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/WWW-Authenticate
-			w.Header().Set("WWW-Authenticate", "Bearer")
-			return nil, fmt.Errorf("no token found")
-		}
 		return authenticator.Authenticate(r.Context(), token)
 	})
 }
