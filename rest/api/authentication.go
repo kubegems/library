@@ -160,6 +160,7 @@ func NewOIDCAuthenticator(ctx context.Context, opts *OIDCOptions) (*OIDCAuthenti
 	verifier := provider.Verifier(&oidc.Config{
 		SkipClientIDCheck: opts.ClientID == "",
 		SkipIssuerCheck:   true,
+		ClientID:          opts.ClientID,
 	})
 	return &OIDCAuthenticator{
 		Verifier:               verifier,
