@@ -165,7 +165,7 @@ func NewOIDCAuthenticator(ctx context.Context, opts *OIDCOptions) (*OIDCAuthenti
 	})
 	return &OIDCAuthenticator{
 		Verifier:               verifier,
-		UsernameClaimCandidate: []string{"preferred_username", "name", "email"},
+		UsernameClaimCandidate: []string{"name", "email"},
 		EmailClaimCandidate:    []string{"email"},
 		GroupsClaimCandidate:   []string{"groups", "roles"},
 		EmailToUsername: func(email string) string {
