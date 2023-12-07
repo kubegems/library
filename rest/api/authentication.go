@@ -10,6 +10,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/crypto/ssh"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"kubegems.io/library/rest/response"
 )
 
@@ -125,16 +126,16 @@ type AuthenticatorChain []TokenAuthenticator
 var _ TokenAuthenticator = AuthenticatorChain{}
 
 func (c AuthenticatorChain) Authenticate(ctx context.Context, token string) (*AuthenticateInfo, error) {
-	var lasterr error
+	var errlist []error
 	for _, authn := range c {
 		info, err := authn.Authenticate(ctx, token)
 		if err != nil {
-			lasterr = err
+			errlist = append(errlist, err)
 			continue
 		}
 		return info, nil
 	}
-	return nil, lasterr
+	return nil, utilerrors.NewAggregate(errlist)
 }
 
 type OIDCAuthenticator struct {
