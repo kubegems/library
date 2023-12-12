@@ -63,5 +63,12 @@ func (o OpenTelemetryPlugin) Install(m *API) error {
 
 func (o OpenTelemetryPlugin) OnRoute(route *Route) error {
 	route.Handler = otelhttp.WithRouteTag(route.Path, route.Handler)
+	// inject filter
+	midware := otelhttp.NewMiddleware(route.Path, otelhttp.WithTracerProvider(o.TraceProvider))
+	filter := FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		midware(next).ServeHTTP(w, r)
+	})
+	// prepend
+	route.Filters = append([]Filter{filter}, route.Filters...)
 	return nil
 }

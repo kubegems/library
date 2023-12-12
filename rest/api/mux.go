@@ -196,9 +196,22 @@ func PathVars(r *http.Request) map[string]string {
 	return nil
 }
 
+var (
+	NameRegexp          = regexp.MustCompile(`^[a-zA-Z0-9]+(?:[._-][a-zA-Z0-9]+)*$`)
+	NameWithSlashRegexp = regexp.MustCompile(`^[a-zA-Z0-9]+(?:[._/-][a-zA-Z0-9]+)*$`)
+)
+
 func NewDefauBodyltValidation() func(r *http.Request, data any) error {
 	v := validator.New()
-	v.RegisterValidation("regxp", func(fl validator.FieldLevel) bool {
+	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
+		name := strings.SplitN(fld.Tag.Get("json"), ",", 2)[0]
+		// skip if tag key says it should be ignored
+		if name == "-" {
+			return ""
+		}
+		return name
+	})
+	v.RegisterValidation("regexp", func(fl validator.FieldLevel) bool {
 		if fl.Field().Kind() != reflect.String {
 			return true
 		}
@@ -206,12 +219,22 @@ func NewDefauBodyltValidation() func(r *http.Request, data any) error {
 		if regxp == "" {
 			return true
 		}
-		if matched, err := regexp.MatchString(regxp, fl.Field().String()); err != nil {
-			return false
-		} else if matched {
+		if matched, _ := regexp.MatchString(regxp, fl.Field().String()); matched {
 			return true
 		}
 		return false
+	})
+	v.RegisterValidation("name", func(fl validator.FieldLevel) bool {
+		if fl.Field().Kind() != reflect.String {
+			return true
+		}
+		return NameRegexp.MatchString(fl.Field().String())
+	})
+	v.RegisterValidation("names", func(fl validator.FieldLevel) bool {
+		if fl.Field().Kind() != reflect.String {
+			return true
+		}
+		return NameWithSlashRegexp.MatchString(fl.Field().String())
 	})
 	return func(r *http.Request, data any) error {
 		return v.StructCtx(r.Context(), data)
