@@ -67,20 +67,22 @@ type SSHAuthenticator interface {
 	AuthenticatePublibcKey(ctx context.Context, pubkey ssh.PublicKey) (*AuthenticateInfo, error)
 }
 
-func NewBasicAuthenticationFilter(authenticator UsernamePasswordAuthenticator) Filter {
-	return NewAuthenticateFilter(func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error) {
-		username, password, ok := r.BasicAuth()
-		if !ok {
-			return nil, fmt.Errorf("no basic auth")
-		}
-		return authenticator.Authenticate(r.Context(), username, password)
-	})
+var responseHeaderContextKey = ContextKey("responseHeader")
+
+func ResponseHeaderFromContext(ctx context.Context) http.Header {
+	if info, ok := ctx.Value(responseHeaderContextKey).(http.Header); ok {
+		return info
+	}
+	return nil
 }
 
 func NewTokenAuthenticationFilter(authenticator TokenAuthenticator) Filter {
 	return NewAuthenticateFilter(func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error) {
 		token := ExtracTokenFromRequest(r)
-		return authenticator.Authenticate(r.Context(), token)
+		ctx := r.Context()
+		// allow authenticator to set response header
+		ctx = context.WithValue(ctx, responseHeaderContextKey, w.Header())
+		return authenticator.Authenticate(ctx, token)
 	})
 }
 
