@@ -85,7 +85,12 @@ func LoggingFilter(log logr.Logger) Filter {
 	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
 		start := time.Now()
 		next.ServeHTTP(w, r)
-		log.Info(r.RequestURI, "method", r.Method, "remote", r.RemoteAddr, "duration", time.Since(start).String())
+		reqpath := r.URL.Path
+		i := strings.Index(reqpath, "?")
+		if i != -1 {
+			reqpath = reqpath[:i]
+		}
+		log.Info(reqpath, "method", r.Method, "remote", r.RemoteAddr, "duration", time.Since(start).String())
 	})
 }
 
