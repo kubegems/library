@@ -27,7 +27,31 @@ import (
 	"time"
 )
 
-var PathVarsFunc = func(r *http.Request) map[string]string {
+type PathVar struct {
+	Key   string `json:"key,omitempty"`
+	Value string `json:"value,omitempty"`
+}
+
+type PathVarList []PathVar
+
+func (p PathVarList) Get(key string) string {
+	for _, v := range p {
+		if v.Key == key {
+			return v.Value
+		}
+	}
+	return ""
+}
+
+func (p PathVarList) Map() map[string]string {
+	m := make(map[string]string, len(p))
+	for _, v := range p {
+		m[v.Key] = v.Value
+	}
+	return m
+}
+
+var PathVarsFunc = func(r *http.Request) PathVarList {
 	return nil
 }
 
@@ -56,16 +80,12 @@ func HeaderOrQuery[T any](r *http.Request, key string, defaultValue T) T {
 	}
 }
 
-func PathVars(r *http.Request) map[string]string {
+func PathVars(r *http.Request) PathVarList {
 	return PathVarsFunc(r)
 }
 
 func Path[T any](r *http.Request, key string, defaultValue T) T {
-	vals := PathVars(r)
-	if vals == nil {
-		return defaultValue
-	}
-	return ValueOrDefault(vals[key], defaultValue)
+	return ValueOrDefault(PathVars(r).Get(key), defaultValue)
 }
 
 func Header[T any](r *http.Request, key string, defaultValue T) T {

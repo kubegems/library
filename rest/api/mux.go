@@ -179,18 +179,18 @@ func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	varsmap := make(map[string]string, len(vars))
-	for _, v := range vars {
-		varsmap[v.Name] = v.Value
+	reqvars := make([]request.PathVar, len(vars))
+	for i, v := range vars {
+		reqvars[i] = request.PathVar{Key: v.Name, Value: v.Value}
 	}
-	r = r.WithContext(context.WithValue(r.Context(), httpVarsContextKey{}, varsmap))
+	r = r.WithContext(context.WithValue(r.Context(), httpVarsContextKey{}, reqvars))
 	node.Value.ServeHTTP(w, r)
 }
 
 type httpVarsContextKey struct{}
 
-func PathVars(r *http.Request) map[string]string {
-	if vars, ok := r.Context().Value(httpVarsContextKey{}).(map[string]string); ok {
+func PathVars(r *http.Request) request.PathVarList {
+	if vars, ok := r.Context().Value(httpVarsContextKey{}).([]request.PathVar); ok {
 		return vars
 	}
 	return nil

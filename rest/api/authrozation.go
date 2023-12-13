@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"kubegems.io/library/rest/response"
 )
 
@@ -158,6 +160,17 @@ func NewAuthorizationFilter(authorizer Authorizer) Filter {
 		if attributes == nil {
 			return DecisionDeny, "no attributes", nil
 		}
+		span := trace.SpanFromContext(r.Context())
+		span.SetAttributes(
+			attribute.String("authorization.action", attributes.Action),
+			attribute.StringSlice("authorization.resources", func() []string {
+				resources := make([]string, 0, len(attributes.Resources))
+				for _, resource := range attributes.Resources {
+					resources = append(resources, resource.Resource+":"+resource.Name)
+				}
+				return resources
+			}()),
+		)
 		user := AuthenticateFromContext(r.Context()).User
 		return authorizer.Authorize(r.Context(), user, *attributes)
 	})

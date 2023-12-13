@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/crypto/ssh"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"kubegems.io/library/rest/response"
@@ -95,8 +97,12 @@ func NewAuthenticateFilter(on func(w http.ResponseWriter, r *http.Request) (*Aut
 			response.Unauthorized(w, fmt.Sprintf("Unauthorized: %v", err))
 			return
 		}
-		ctx := WithAuthenticate(r.Context(), *info)
-		next.ServeHTTP(w, r.WithContext(ctx))
+		sp := trace.SpanFromContext(r.Context())
+		sp.SetAttributes(
+			attribute.String("user.name", info.User.Name),
+			attribute.String("user.email", info.User.Email),
+		)
+		next.ServeHTTP(w, r.WithContext(WithAuthenticate(r.Context(), *info)))
 	})
 }
 

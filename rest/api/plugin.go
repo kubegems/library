@@ -4,7 +4,9 @@ import (
 	"net/http"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"kubegems.io/library/rest/request"
 	"kubegems.io/library/rest/response"
 )
 
@@ -66,7 +68,20 @@ func (o OpenTelemetryPlugin) OnRoute(route *Route) error {
 	// inject filter
 	midware := otelhttp.NewMiddleware(route.Path, otelhttp.WithTracerProvider(o.TraceProvider))
 	filter := FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
-		midware(next).ServeHTTP(w, r)
+		nn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r)
+
+			vars := request.PathVars(r)
+			vals := make([]string, 0, len(vars))
+			for _, v := range vars {
+				vals = append(vals, v.Key+"="+v.Value)
+			}
+			sp := trace.SpanFromContext(r.Context())
+			sp.SetAttributes(
+				attribute.StringSlice("pathvars", vals),
+			)
+		})
+		midware(nn).ServeHTTP(w, r)
 	})
 	// prepend
 	route.Filters = append([]Filter{filter}, route.Filters...)

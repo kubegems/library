@@ -222,7 +222,8 @@ func parseArgs(method string, reflectMethod reflect.Method, pathvarnames []strin
 }
 
 func prepareCallArgs(r *http.Request, arg0 reflect.Value, args []Argv) ([]reflect.Value, error) {
-	pathvars, queries := api.PathVars(r), r.URL.Query()
+	pathvars, queries := api.PathVars(r).Map(), r.URL.Query()
+
 	callargs := []reflect.Value{arg0}
 	for _, arg := range args {
 		switch arg.Loc {
