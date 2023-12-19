@@ -62,6 +62,12 @@ type HTTPAuthenticator interface {
 	Authenticate(ctx context.Context, r *http.Request) (*AuthenticateInfo, error)
 }
 
+type HTTPAuthenticateFunc func(ctx context.Context, r *http.Request) (*AuthenticateInfo, error)
+
+func (f HTTPAuthenticateFunc) Authenticate(ctx context.Context, r *http.Request) (*AuthenticateInfo, error) {
+	return f(ctx, r)
+}
+
 type SSHAuthenticator interface {
 	UsernamePasswordAuthenticator
 	AuthenticatePublibcKey(ctx context.Context, pubkey ssh.PublicKey) (*AuthenticateInfo, error)
@@ -77,26 +83,34 @@ func ResponseHeaderFromContext(ctx context.Context) http.Header {
 }
 
 func NewTokenAuthenticationFilter(authenticator TokenAuthenticator) Filter {
-	return NewAuthenticateFilter(func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error) {
+	return NewTokenAuthenticationFilterWithErrHandle(authenticator, nil)
+}
+
+func NewTokenAuthenticationFilterWithErrHandle(authenticator TokenAuthenticator, errhandle AuthenticateErrorHandleFunc) Filter {
+	authfunc := func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error) {
 		token := ExtracTokenFromRequest(r)
 		ctx := r.Context()
 		// allow authenticator to set response header
 		ctx = context.WithValue(ctx, responseHeaderContextKey, w.Header())
 		return authenticator.Authenticate(ctx, token)
-	})
+	}
+	return NewAuthenticateFilter(authfunc, errhandle)
 }
 
-func NewHTTPAuthenticationFilter(authenticator HTTPAuthenticator) Filter {
-	return NewAuthenticateFilter(func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error) {
-		return authenticator.Authenticate(r.Context(), r)
-	})
-}
+type (
+	AuthenticateErrorHandleFunc func(w http.ResponseWriter, r *http.Request, err error)
+	AuthenticateFunc            func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error)
+)
 
-func NewAuthenticateFilter(on func(w http.ResponseWriter, r *http.Request) (*AuthenticateInfo, error)) Filter {
+func NewAuthenticateFilter(onauth AuthenticateFunc, onerr AuthenticateErrorHandleFunc) Filter {
 	return FilterFunc(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
-		info, err := on(w, r)
+		info, err := onauth(w, r)
 		if err != nil {
-			response.Unauthorized(w, fmt.Sprintf("Unauthorized: %v", err))
+			if onerr != nil {
+				onerr(w, r, err)
+			} else {
+				response.Unauthorized(w, fmt.Sprintf("Unauthorized: %v", err))
+			}
 			return
 		}
 		sp := trace.SpanFromContext(r.Context())
