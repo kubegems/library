@@ -329,6 +329,10 @@ type LRUCacheAuthenticator struct {
 
 // Authenticate implements TokenAuthenticator.
 func (a *LRUCacheAuthenticator) Authenticate(ctx context.Context, token string) (*AuthenticateInfo, error) {
+	// do not cache anonymous user
+	if token == "" {
+		return a.Authenticator.Authenticate(ctx, token)
+	}
 	return a.Cache.GetOrAdd(token, func() (*AuthenticateInfo, error) {
 		return a.Authenticator.Authenticate(ctx, token)
 	})
