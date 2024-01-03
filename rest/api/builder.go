@@ -259,9 +259,6 @@ func (t Group) Build() map[string]map[string]Route {
 }
 
 func buildRoutes(items map[string]map[string]Route, merged Group, group Group) {
-	if merged.Path == "" {
-		merged.Path = "/"
-	}
 	merged.Path = path.Join(merged.Path, group.Path)
 	merged.Params = append(merged.Params, group.Params...)
 	merged.Tags = append(merged.Tags, group.Tags...)
