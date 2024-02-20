@@ -55,6 +55,11 @@ func (m *API) NotFound(handler http.Handler) *API {
 	return m
 }
 
+func (m *API) MethodNotAllowed(handler http.Handler) *API {
+	m.mux.SetMethodNotAllowed(handler)
+	return m
+}
+
 func (m *API) Group(groups ...Group) *API {
 	for _, group := range groups {
 		for _, routes := range group.Build() {

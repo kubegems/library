@@ -19,6 +19,7 @@ type Router interface {
 	HandleRoute(route *Route) error
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 	SetNotFound(handler http.Handler)
+	SetMethodNotAllowed(handler http.Handler)
 }
 
 func MethodNotAllowed(w http.ResponseWriter, r *http.Request) {
@@ -69,35 +70,31 @@ func MatchMIME(accept string, supported []string) bool {
 
 type MethodsHandler map[string]http.Handler
 
-func (h MethodsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	handler := h.handler(r)
-	if handler == nil {
-		w.Header().Add("Allow", strings.Join(maps.Keys(h), ","))
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		} else {
-			MethodNotAllowed(w, r)
-		}
-		return
+func (h MethodsHandler) NotAllowed(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Allow", strings.Join(maps.Keys(h), ","))
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+	} else {
+		MethodNotAllowed(w, r)
 	}
-	handler.ServeHTTP(w, r)
 }
 
-func (h MethodsHandler) handler(r *http.Request) http.Handler {
+func (h MethodsHandler) selectHandler(r *http.Request) http.Handler {
 	if h == nil || len(h) == 0 {
 		return nil
 	}
-	handler := h[r.Method]
-	if handler == nil {
-		handler = h[""]
+	for _, candidate := range []string{r.Method, ""} {
+		if handler, ok := h[candidate]; ok {
+			return handler
+		}
 	}
-	return handler
+	return nil
 }
 
 type Mux struct {
-	NotFound http.Handler
-	Tree     matcher.Node[MethodsHandler]
+	NotFound         http.Handler
+	MethodNotAllowed http.Handler
+	Tree             matcher.Node[MethodsHandler]
 }
 
 func NewMux() *Mux {
@@ -121,6 +118,10 @@ func (m *Mux) Handle(method, pattern string, handler http.Handler) error {
 
 func (m *Mux) SetNotFound(handler http.Handler) {
 	m.NotFound = handler
+}
+
+func (m *Mux) SetMethodNotAllowed(handler http.Handler) {
+	m.MethodNotAllowed = handler
 }
 
 func (m *Mux) HandleRoute(route *Route) error {
@@ -184,7 +185,16 @@ func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reqvars[i] = request.PathVar{Key: v.Name, Value: v.Value}
 	}
 	r = r.WithContext(context.WithValue(r.Context(), httpVarsContextKey{}, reqvars))
-	node.Value.ServeHTTP(w, r)
+
+	if handler := node.Value.selectHandler(r); handler != nil {
+		handler.ServeHTTP(w, r)
+		return
+	}
+	if m.MethodNotAllowed != nil {
+		m.MethodNotAllowed.ServeHTTP(w, r)
+		return
+	}
+	node.Value.NotAllowed(w, r)
 }
 
 type httpVarsContextKey struct{}
