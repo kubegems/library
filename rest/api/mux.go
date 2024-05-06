@@ -171,7 +171,7 @@ func completePathParam(route *Route, sections []matcher.Section) {
 }
 
 func (m *Mux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	node, vars := m.Tree.Match(r.URL.Path, nil)
+	node, vars := m.Tree.Match(r.URL.RawPath, nil)
 	if node == nil || node.Value == nil {
 		if m.NotFound == nil {
 			http.NotFound(w, r)
