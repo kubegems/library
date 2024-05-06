@@ -128,7 +128,11 @@ func (mux *MethodServeMux) HandleFunc(method, pattern string, handler func(w htt
 }
 
 func (mux *MethodServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if matched, val, vars := mux.mactcher.Match(r.URL.Path); matched {
+	matchpath := r.URL.Path
+	if r.URL.RawPath != "" {
+		matchpath = r.URL.RawPath
+	}
+	if matched, val, vars := mux.mactcher.Match(matchpath); matched {
 		val.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), contextKeyPathVars, vars)))
 		return
 	}
