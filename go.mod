@@ -17,6 +17,7 @@ require (
 	golang.org/x/exp v0.0.0-20230728194245-b0cb94b80691
 	golang.org/x/net v0.12.0
 	k8s.io/apimachinery v0.27.4
+	sigs.k8s.io/yaml v1.3.0
 )
 
 require (

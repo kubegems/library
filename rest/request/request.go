@@ -20,12 +20,14 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"kubegems.io/library/rest/mux"
+	"sigs.k8s.io/yaml"
 )
 
 type ListOptions struct {
@@ -121,6 +123,12 @@ func Body(r *http.Request, into any) error {
 		return json.NewDecoder(body).Decode(into)
 	case "application/xml":
 		return xml.NewDecoder(body).Decode(into)
+	case "application/yaml":
+		data, err := io.ReadAll(body)
+		if err != nil {
+			return err
+		}
+		return yaml.Unmarshal(data, into)
 	default:
 		return fmt.Errorf("unsupported media type: %s", mediatype)
 	}
