@@ -32,11 +32,15 @@ type OIDCOptions struct {
 
 	// Scopes is the set of scopes to request.
 	Scope []string `json:"scope" description:"oidc scope"`
+
+	// UsernameClaims is the list of claims to check for a username.
+	UsernameClaims []string `json:"usernameClaims,omitempty" description:"username claims, default is 'name'"`
 }
 
 func NewDefaultOIDCOptions() *OIDCOptions {
 	return &OIDCOptions{
-		Scope: []string{oidc.ScopeOpenID, "profile"},
+		Scope:          []string{oidc.ScopeOpenID, "profile"},
+		UsernameClaims: []string{"name"},
 	}
 }
 

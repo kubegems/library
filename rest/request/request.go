@@ -20,11 +20,14 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"sigs.k8s.io/yaml"
 )
 
 type PathVar struct {
@@ -157,6 +160,12 @@ func Body(r *http.Request, into any) error {
 		if err := xml.NewDecoder(body).Decode(into); err != nil {
 			return err
 		}
+	case "application/yaml":
+		data, err := io.ReadAll(body)
+		if err != nil {
+			return err
+		}
+		return yaml.Unmarshal(data, into)
 	default:
 		return fmt.Errorf("unsupported media type: %s", mediatype)
 	}
