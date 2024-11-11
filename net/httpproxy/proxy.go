@@ -15,6 +15,7 @@ type Server struct {
 func (h *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rp := httputil.ReverseProxy{
 		Director: func(r *http.Request) {
+			backupRestoreAuthorizationHeader(r)
 			if forwardedHost := r.Header.Get("X-Forwarded-Host"); forwardedHost != "" {
 				r.Host, r.URL.Host = forwardedHost, forwardedHost
 			}
@@ -56,6 +57,7 @@ func (h Client) RoundTrip(r *http.Request) (*http.Response, error) {
 		// SetXForwarded use r.Host to set X-Forwarded-Host,make sure r.Host is not empty
 		r.Host = r.URL.Host
 	}
+	backupRestoreAuthorizationHeader(r)
 	ctx := r.Context()
 	outreq := r.Clone(ctx)
 	if r.ContentLength == 0 {
@@ -78,6 +80,19 @@ func (h Client) RoundTrip(r *http.Request) (*http.Response, error) {
 		httpcli = h.HttpClient
 	}
 	return httpcli.Do(outreq)
+}
+
+func backupRestoreAuthorizationHeader(r *http.Request) {
+	// avoid Authorization header removed by mid proxy
+	if authorization := r.Header.Get("Authorization"); authorization != "" {
+		// backup Authorization header
+		r.Header.Set("X-Authorization", authorization)
+	} else {
+		// restore Authorization header
+		if xauthorization := r.Header.Get("X-Authorization"); xauthorization != "" {
+			r.Header.Set("Authorization", xauthorization)
+		}
+	}
 }
 
 // SetXForwarded is a extend version of ProxyRequest{}.SetXForwarded(
