@@ -37,20 +37,29 @@ type ItemAccessor[T any] struct {
 // DefaultObjectAccessor 提供 Kubernetes 对象的默认访问器实现
 var DefaultObjectAccessor = ItemAccessor[any]{
 	GetName: func(t any) string {
-		if item, ok := t.(interface{ GetName() string }); ok {
+		if item, ok := any(t).(interface{ GetName() string }); ok {
+			return item.GetName()
+		}
+		if item, ok := any(&t).(interface{ GetName() string }); ok {
 			return item.GetName()
 		}
 		return ""
 	},
 	GetTime: func(t any) time.Time {
-		if item, ok := t.(interface{ GetCreationTimestamp() metav1.Time }); ok {
+		if item, ok := any(t).(interface{ GetCreationTimestamp() metav1.Time }); ok {
+			return item.GetCreationTimestamp().Time
+		}
+		if item, ok := any(&t).(interface{ GetCreationTimestamp() metav1.Time }); ok {
 			return item.GetCreationTimestamp().Time
 		}
 		return time.Time{}
 	},
 	GetPVCRatio: func(t any) float64 {
 		var anno map[string]string
-		if item, ok := t.(interface{ GetAnnotations() map[string]string }); ok {
+		if item, ok := any(t).(interface{ GetAnnotations() map[string]string }); ok {
+			anno = item.GetAnnotations()
+		}
+		if item, ok := any(&t).(interface{ GetAnnotations() map[string]string }); ok {
 			anno = item.GetAnnotations()
 		}
 		// storage.kubegems.io/pvc-ratio 是 Kubegems 特有的注解，用于表示 PVC 的使用率
