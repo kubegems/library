@@ -162,4 +162,29 @@ func TestPageObjectFromRequest(t *testing.T) {
 		// 超出总页数时，应该返回空列表
 		validatePageResult(t, "page exceeds with size 1", got, 4, 5, 1, []string{}, func(obj TestObj) string { return obj.Name })
 	})
+
+	t.Run("debug search with accessor", func(t *testing.T) {
+		list := createTestObjects(baseTime)
+		accessor := GetObjectAccessor[TestObj]()
+
+		// 验证 accessor.GetName 可以正确获取名称
+		if name := accessor.GetName(list[0]); name == "" {
+			t.Errorf("accessor.GetName returned empty string, expected %q", list[0].Name)
+		} else if name != list[0].Name {
+			t.Errorf("accessor.GetName = %q, want %q", name, list[0].Name)
+		}
+
+		// 验证搜索功能
+		searchFunc := SearchNameFuncWithAccessor("pod1", accessor)
+		if searchFunc == nil {
+			t.Error("SearchNameFuncWithAccessor returned nil")
+		} else {
+			if !searchFunc(list[0]) {
+				t.Error("searchFunc should return true for pod1")
+			}
+			if searchFunc(list[1]) {
+				t.Error("searchFunc should return false for pod2")
+			}
+		}
+	})
 }
