@@ -37,29 +37,20 @@ type ItemAccessor[T any] struct {
 // DefaultObjectAccessor 提供 Kubernetes 对象的默认访问器实现
 var DefaultObjectAccessor = ItemAccessor[any]{
 	GetName: func(t any) string {
-		if item, ok := any(t).(interface{ GetName() string }); ok {
-			return item.GetName()
-		}
-		if item, ok := any(&t).(interface{ GetName() string }); ok {
+		if item, ok := t.(interface{ GetName() string }); ok {
 			return item.GetName()
 		}
 		return ""
 	},
 	GetTime: func(t any) time.Time {
-		if item, ok := any(t).(interface{ GetCreationTimestamp() metav1.Time }); ok {
-			return item.GetCreationTimestamp().Time
-		}
-		if item, ok := any(&t).(interface{ GetCreationTimestamp() metav1.Time }); ok {
+		if item, ok := t.(interface{ GetCreationTimestamp() metav1.Time }); ok {
 			return item.GetCreationTimestamp().Time
 		}
 		return time.Time{}
 	},
 	GetPVCRatio: func(t any) float64 {
 		var anno map[string]string
-		if item, ok := any(t).(interface{ GetAnnotations() map[string]string }); ok {
-			anno = item.GetAnnotations()
-		}
-		if item, ok := any(&t).(interface{ GetAnnotations() map[string]string }); ok {
+		if item, ok := t.(interface{ GetAnnotations() map[string]string }); ok {
 			anno = item.GetAnnotations()
 		}
 		// storage.kubegems.io/pvc-ratio 是 Kubegems 特有的注解，用于表示 PVC 的使用率
@@ -76,13 +67,13 @@ var DefaultObjectAccessor = ItemAccessor[any]{
 func GetObjectAccessor[T any]() ItemAccessor[T] {
 	return ItemAccessor[T]{
 		GetName: func(t T) string {
-			return DefaultObjectAccessor.GetName(any(t))
+			return DefaultObjectAccessor.GetName(t)
 		},
 		GetTime: func(t T) time.Time {
-			return DefaultObjectAccessor.GetTime(any(t))
+			return DefaultObjectAccessor.GetTime(t)
 		},
 		GetPVCRatio: func(t T) float64 {
-			return DefaultObjectAccessor.GetPVCRatio(any(t))
+			return DefaultObjectAccessor.GetPVCRatio(t)
 		},
 	}
 }
@@ -148,18 +139,19 @@ func PageFrom[T any](list []T, page, size int, pickfun func(item T) bool, sortfu
 		slices.SortFunc(list, sortfun)
 	}
 
-	// page
 	total := len(list)
 	startIdx := (page - 1) * size
 	endIdx := startIdx + size
 	if startIdx > total {
 		startIdx = 0
 		endIdx = 0
+		list = []T{}
+	} else {
+		if endIdx > total {
+			endIdx = total
+		}
+		list = list[startIdx:endIdx]
 	}
-	if endIdx > total {
-		endIdx = total
-	}
-	list = list[startIdx:endIdx]
 	return Page[T]{
 		Total: int64(total),
 		List:  list,
@@ -250,7 +242,7 @@ func SortByFuncWithAccessor[T any](by string, accessor ItemAccessor[T]) func(a, 
 		}
 		return func(a, b T) int {
 			if timcmp := accessor.GetTime(b).Compare(accessor.GetTime(a)); timcmp == 0 && accessor.GetName != nil {
-				return strings.Compare(accessor.GetName(b), accessor.GetName(a))
+				return strings.Compare(accessor.GetName(a), accessor.GetName(b))
 			} else {
 				return timcmp
 			}
